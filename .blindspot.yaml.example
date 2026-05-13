@@ -1,0 +1,18 @@
+# Example blindspot configuration.
+# Copy to `.blindspot.yaml` (in repo root) or `~/.config/blindspot/config.yaml`
+# and fill in the values you need.
+#
+# Precedence: CLI flags > project (./.blindspot.yaml) > user (~/.config/blindspot/config.yaml).
+# blindspot deliberately does NOT read API keys from environment variables.
+
+narrative:
+  # LLM provider for `--with-narrative`. Currently supported: anthropic.
+  provider: anthropic
+
+  # Override the default model (claude-haiku-4-5-20251001).
+  # Other Claude models: claude-sonnet-4-6, claude-opus-4-7
+  # model: claude-sonnet-4-6
+
+  # API key. Keep this file out of git if you commit your key here —
+  # prefer ~/.config/blindspot/config.yaml or `--api-key` on the command line.
+  api_key: sk-ant-...
