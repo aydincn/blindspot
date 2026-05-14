@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "blindspot"
-version = "0.0.1"
+version = "0.0.2"
 description = "The bus factor for the AI era. Map team knowledge blindspots before someone leaves."
 readme = "README.md"
 license = { text = "MIT" }
@@ -49,6 +49,8 @@ blindspot = "blindspot.cli:app"
 [project.urls]
 Homepage = "https://github.com/aydincn/blindspot"
 Repository = "https://github.com/aydincn/blindspot"
+Documentation = "https://github.com/aydincn/blindspot/tree/main/docs"
+Changelog = "https://github.com/aydincn/blindspot/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/blindspot"]

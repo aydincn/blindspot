@@ -3,6 +3,35 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.0.2] — 2026-05-14 (Pre-alpha)
+
+First PyPI release.
+
+### Departure reporting
+- Standalone HTML departure report for the `simulate` command (`--output`)
+- "Departure scenarios" and "Central models" sections in the scan report
+- Named fragility patterns on recommendations: review-without-scrutiny,
+  single-owner-concentration, velocity-without-review
+
+### Dependency graph
+- Auto-detect code root (`src/` / `lib/` / `app/`); test, example, and
+  docs directories are excluded from the structural graph by default
+- AST-based Python extractor: import resolution, class-inheritance edges,
+  and data-model detection (dataclass, pydantic, attrs, msgspec, …)
+- Module aggregation peels the common parent prefix so internal
+  architecture is visible
+
+### Review-data providers
+- Bitbucket Cloud provider (remote detection, REST v2.0 client,
+  app-password auth) — `--with-reviews` now works on Bitbucket repos
+- Shared provider-agnostic pull-request models
+- `--github-token` flag and `github:` config block for private repos
+  without the `gh` CLI
+
+### Documentation
+- New `docs/` folder: overview, quickstart, architecture, algorithms,
+  CLI reference, configuration, outputs, and glossary
+
 ## [0.0.1] — 2026-05-13 (Pre-alpha)
 
 Initial public release.
