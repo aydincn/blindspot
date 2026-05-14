@@ -28,6 +28,12 @@ blindspot simulate --person alice@example.com /path/to/repo
 
 Output is a single self-contained HTML file. No server, no signup, no telemetry.
 
+## Documentation
+
+Full end-to-end documentation lives in [docs/](docs/README.md) — the
+algorithms (with formulas and parameters), the architecture, the CLI
+reference, configuration, and how to read every section of the report.
+
 ## Design principles
 
 - **Service-first, not person-first.** Default views show service-level risk. Individual views require explicit, justified access.
