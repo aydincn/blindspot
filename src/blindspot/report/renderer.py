@@ -1,6 +1,6 @@
 from jinja2 import Environment, PackageLoader
 
-from blindspot.report.context import ReportContext
+from blindspot.report.context import DepartureContext, ReportContext
 
 
 class ReportRenderer:
@@ -16,4 +16,8 @@ class ReportRenderer:
 
     def render(self, ctx: ReportContext) -> str:
         template = self.env.get_template("report.html.j2")
+        return template.render(ctx=ctx)
+
+    def render_departure(self, ctx: DepartureContext) -> str:
+        template = self.env.get_template("departure.html.j2")
         return template.render(ctx=ctx)

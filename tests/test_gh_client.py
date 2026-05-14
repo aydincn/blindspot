@@ -119,4 +119,19 @@ def test_make_github_client_uses_token_when_provided_and_gh_unavailable():
     assert backend == "token"
 
 
+def test_make_github_client_prefers_explicit_token_over_gh():
+    # Even when gh CLI is available + authed, an explicit token wins —
+    # the caller configured it deliberately, so respect it.
+    with (
+        patch(
+            "blindspot.collector.github.gh_client.is_gh_available", return_value=True
+        ),
+        patch(
+            "blindspot.collector.github.gh_client.is_gh_authenticated", return_value=True
+        ),
+    ):
+        client, backend = make_github_client(prefer_gh=True, token="ghp_fake")
+    assert backend == "token"
+
+
 _ = subprocess  # imported for clarity of what is being mocked

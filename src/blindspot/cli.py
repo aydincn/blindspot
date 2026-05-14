@@ -20,26 +20,47 @@ from blindspot.codeowners import (
     find_codeowners_file,
     parse_codeowners,
 )
+from blindspot.collector import GitCollector
+from blindspot.collector.bitbucket import (
+    BitbucketAuthError,
+    BitbucketClient,
+    BitbucketError,
+    BitbucketPRCollector,
+    detect_bitbucket_remote,
+    load_bitbucket_config,
+)
+from blindspot.collector.filters import FileFilter
+from blindspot.collector.github import (
+    PRCollector,
+    detect_github_remote,
+    load_github_config,
+    make_github_client,
+)
+from blindspot.dependency_graph import (
+    DependencyGraphBuilder,
+    ImportanceEngine,
+    ModuleGraph,
+    aggregate_modules,
+)
+from blindspot.dependency_graph import (
+    top_n as central_top_n,
+)
+from blindspot.dependency_graph.builder import auto_detect_code_root
+from blindspot.dependency_graph.llm_fallback import LLMImportExtractor
+from blindspot.diff_analysis import DiffChurnSummary, classify_file, summarise
 from blindspot.narrative import (
     NarrativeConfigError,
     NarrativeEngine,
     load_narrative_config,
 )
 from blindspot.narrative.client import MissingAPIKey, NarrativeError, build_client
-from blindspot.collector import GitCollector
-from blindspot.collector.filters import FileFilter
-from blindspot.collector.github import PRCollector, detect_github_remote, make_github_client
-from blindspot.dependency_graph import (
-    DependencyGraphBuilder,
-    ImportanceEngine,
-    ModuleGraph,
-    aggregate_modules,
-    top_n as central_top_n,
-)
-from blindspot.dependency_graph.llm_fallback import LLMImportExtractor
-from blindspot.diff_analysis import DiffChurnSummary, classify_file, summarise
 from blindspot.ownership import OwnershipEngine
-from blindspot.report import ReportContext, ReportRenderer
+from blindspot.report import (
+    DepartureContext,
+    ReportContext,
+    ReportRenderer,
+    compute_remaining_gaps,
+)
 from blindspot.resilience import ResilienceScoreEngine
 from blindspot.review_graph import ReviewGraph, ReviewGraphBuilder
 from blindspot.risk_models import (
@@ -47,6 +68,7 @@ from blindspot.risk_models import (
     DepartureSimulation,
     KnowledgeDecayEngine,
 )
+from blindspot.risk_models.departure import DepartureReport
 from blindspot.trend import TrendEngine
 
 app = typer.Typer(
@@ -95,10 +117,29 @@ def scan(
     with_reviews: bool = typer.Option(
         False,
         "--with-reviews",
-        help="Fetch PR/review data from GitHub. Anonymous API, rate limited to 60/hr.",
+        help="Fetch PR/review data. Auto-detects GitHub or Bitbucket Cloud "
+        "from the git remote. GitHub: anonymous (60/hr) or gh CLI. Bitbucket: "
+        "requires --bitbucket-username + --bitbucket-app-password or a "
+        "bitbucket: block in .blindspot.yaml.",
     ),
     max_prs: int = typer.Option(
         50, "--max-prs", help="Maximum PRs to fetch when --with-reviews is set."
+    ),
+    github_token: str = typer.Option(
+        "", "--github-token",
+        help="GitHub personal access token (overrides .blindspot.yaml). "
+        "Needed for private repos when the gh CLI isn't available. "
+        "Never read from environment variables.",
+    ),
+    bitbucket_username: str = typer.Option(
+        "", "--bitbucket-username",
+        help="Bitbucket Cloud username (overrides .blindspot.yaml). "
+        "Never read from environment variables.",
+    ),
+    bitbucket_app_password: str = typer.Option(
+        "", "--bitbucket-app-password",
+        help="Bitbucket Cloud app password with pullrequest:read + "
+        "repository:read scopes (overrides .blindspot.yaml).",
     ),
     experimental_ai_signal: bool = typer.Option(
         False,
@@ -120,9 +161,26 @@ def scan(
         help="Skip building the file-dependency graph (faster, but recommendations "
         "won't be filtered by structural importance).",
     ),
+    code_root: str = typer.Option(
+        "", "--code-root",
+        help="Repo-relative directory to constrain the dependency graph to. "
+        "Default: auto-detect (prefers src/, then lib/, then app/, otherwise repo root). "
+        "Set to '.' to scan the whole repo.",
+    ),
+    include_tests_in_graph: bool = typer.Option(
+        False, "--include-tests-in-graph",
+        help="Include files under tests/, examples/, docs/ in the dependency "
+        "graph. Off by default — those folders pollute the architectural view. "
+        "They still count for ownership and decay regardless of this flag.",
+    ),
     importance_threshold: float = typer.Option(
         0.005, "--importance-threshold",
         help="PageRank threshold below which files are excluded from recommendations.",
+    ),
+    simulate_top_departures: int = typer.Option(
+        3, "--simulate-top-departures",
+        help="Add 'what-if' departure scenarios to the report for the top-N "
+        "contributors by aggregate ownership coverage. Set to 0 to disable.",
     ),
     llm_graph: bool = typer.Option(
         False, "--llm-graph",
@@ -188,41 +246,90 @@ def scan(
     reviews_enabled = False
 
     if with_reviews:
-        remote = detect_github_remote(path)
-        if remote is None:
-            console.print(
-                "[yellow]No GitHub remote detected — skipping review data.[/yellow]"
+        # Provider auto-detect: GitHub first (anonymous fallback works),
+        # then Bitbucket Cloud (needs an app password).
+        gh_remote = detect_github_remote(path)
+        bb_remote = detect_bitbucket_remote(path) if gh_remote is None else None
+
+        if gh_remote is not None:
+            gh_config = load_github_config(
+                repo_path=path,
+                cli_token=github_token or None,
             )
-        else:
-            client, backend = make_github_client(prefer_gh=True)
+            client, backend = make_github_client(
+                prefer_gh=True,
+                token=gh_config.token or None,
+            )
             limit_msg = {
                 "gh": "via [bold]gh[/bold] CLI (5000/hr)",
                 "token": "via token (5000/hr)",
-                "anonymous": "anonymous (60/hr)",
+                "anonymous": "anonymous (60/hr — public repos only)",
             }[backend]
             console.print(
-                f"Fetching up to {max_prs} PRs for [bold]{remote.slug}[/bold] — {limit_msg}…"
+                f"Fetching up to {max_prs} PRs for [bold]{gh_remote.slug}[/bold] "
+                f"— GitHub {limit_msg}…"
             )
             try:
                 pr_collector = PRCollector(
-                    client, remote.owner, remote.repo,
+                    client, gh_remote.owner, gh_remote.repo,
                     since_days=since_days, max_prs=max_prs,
                 )
                 prs, pr_truncated = pr_collector.collect()
             except Exception as e:
                 console.print(f"[red]GitHub error:[/red] {e}")
                 prs = []
-            pr_count = len(prs)
-            if pr_count:
-                review_graph = ReviewGraphBuilder().build(prs)
-                diff_summary = summarise(prs)
-                reviews_enabled = True
-                msg = f"Fetched {pr_count} PRs"
-                if pr_truncated:
-                    msg += " (rate-limited — partial data)"
-                console.print(f"[green]✓[/green] {msg}")
+        elif bb_remote is not None:
+            bb_config = load_bitbucket_config(
+                repo_path=path,
+                cli_username=bitbucket_username or None,
+                cli_app_password=bitbucket_app_password or None,
+            )
+            if not bb_config.is_complete:
+                console.print(
+                    "[yellow]Bitbucket remote detected but no credentials — "
+                    "skipping review data. Add a [bold]bitbucket:[/bold] block "
+                    "to .blindspot.yaml (username + app_password) or pass "
+                    "--bitbucket-username + --bitbucket-app-password.[/yellow]"
+                )
             else:
-                console.print("[yellow]No PR data collected.[/yellow]")
+                console.print(
+                    f"Fetching up to {max_prs} PRs for "
+                    f"[bold]{bb_remote.slug}[/bold] — Bitbucket Cloud "
+                    f"(app password)…"
+                )
+                try:
+                    bb_client = BitbucketClient(
+                        username=bb_config.username,
+                        app_password=bb_config.app_password,
+                    )
+                    bb_collector = BitbucketPRCollector(
+                        bb_client, bb_remote.workspace, bb_remote.repo,
+                        since_days=since_days, max_prs=max_prs,
+                    )
+                    prs, pr_truncated = bb_collector.collect()
+                except BitbucketAuthError as e:
+                    console.print(f"[red]Bitbucket auth error:[/red] {e}")
+                    prs = []
+                except BitbucketError as e:
+                    console.print(f"[red]Bitbucket error:[/red] {e}")
+                    prs = []
+        else:
+            console.print(
+                "[yellow]No GitHub or Bitbucket remote detected — "
+                "skipping review data.[/yellow]"
+            )
+
+        pr_count = len(prs)
+        if pr_count:
+            review_graph = ReviewGraphBuilder().build(prs)
+            diff_summary = summarise(prs)
+            reviews_enabled = True
+            msg = f"Fetched {pr_count} PRs"
+            if pr_truncated:
+                msg += " (truncated — partial data)"
+            console.print(f"[green]✓[/green] {msg}")
+        elif gh_remote is not None or bb_remote is not None:
+            console.print("[yellow]No PR data collected.[/yellow]")
 
     ownership = OwnershipEngine().compute(commits, review_graph=review_graph)
 
@@ -249,6 +356,7 @@ def scan(
 
     importance_map: dict[str, float] = {}
     top_central: tuple = ()
+    top_central_models: tuple = ()
     module_graph: ModuleGraph | None = None
     if not no_dependency_graph:
         try:
@@ -274,8 +382,23 @@ def scan(
                     )
                 except (NarrativeConfigError, MissingAPIKey) as e:
                     console.print(f"  [yellow]LLM fallback disabled:[/yellow] {e}")
+            # User flag wins; otherwise auto-detect prefers src/ then lib/.
+            resolved_code_root = (
+                code_root.strip()
+                if code_root.strip()
+                else auto_detect_code_root(path)
+            )
+            if resolved_code_root and resolved_code_root != ".":
+                console.print(
+                    f"  Dependency graph scope: [bold]{resolved_code_root}/[/bold] "
+                    f"(use --code-root to override, --include-tests-in-graph to "
+                    f"include tests/examples/docs)"
+                )
             graph = DependencyGraphBuilder(
-                file_filter=file_filter, llm_fallback=llm_extractor,
+                file_filter=file_filter,
+                llm_fallback=llm_extractor,
+                code_root=resolved_code_root if resolved_code_root != "." else "",
+                include_tests=include_tests_in_graph,
             ).build(path)
             importance_map = ImportanceEngine().compute(graph)
             module_graph = aggregate_modules(graph)
@@ -312,6 +435,33 @@ def scan(
                     "[dim]Dependency graph built but no importance scores "
                     "(repo may have no import statements in supported languages).[/dim]"
                 )
+
+            # AST-derived "central models": files defining many model classes
+            # that other files actually depend on. Currently Python only.
+            raw_models = graph.top_models(limit=10)
+            if raw_models:
+                enriched_models = []
+                for m in raw_models:
+                    fos = ownership.for_file(m.file)
+                    top_email = fos[0].author_email if fos else None
+                    top_cov = fos[0].coverage if fos else 0.0
+                    enriched_models.append(
+                        replace(m, top_owner=top_email, top_owner_coverage=top_cov)
+                    )
+                top_central_models = tuple(enriched_models)
+                mtbl = Table(title=f"Top central models ({len(graph.model_files)} model-bearing files)")
+                mtbl.add_column("File")
+                mtbl.add_column("Model classes", justify="right")
+                mtbl.add_column("Dependents", justify="right")
+                mtbl.add_column("Top owner")
+                for m in top_central_models:
+                    mtbl.add_row(
+                        m.file,
+                        str(m.model_class_count),
+                        str(m.dependents),
+                        ownership.label_for(m.top_owner) if m.top_owner else "—",
+                    )
+                console.print(mtbl)
         except Exception as e:
             console.print(f"[yellow]Dependency graph skipped:[/yellow] {e}")
 
@@ -561,6 +711,24 @@ def scan(
                     f"[{dcolor}]{arrow} {trend.delta_overall:+d} overall vs oldest snapshot[/{dcolor}]"
                 )
 
+    departure_scenarios: tuple[DepartureReport, ...] = ()
+    if simulate_top_departures > 0 and ownership.scores:
+        by_author_cov: dict[str, float] = {}
+        for s in ownership.scores:
+            by_author_cov[s.author_email] = (
+                by_author_cov.get(s.author_email, 0.0) + s.coverage
+            )
+        top_emails = [
+            email for email, _ in sorted(by_author_cov.items(), key=lambda kv: -kv[1])
+        ][:simulate_top_departures]
+        sim = DepartureSimulation()
+        departure_scenarios = tuple(sim.simulate(ownership, [email]) for email in top_emails)
+        console.print(
+            f"Simulating departure of top {len(departure_scenarios)} "
+            f"contributor{'s' if len(departure_scenarios) != 1 else ''} "
+            f"by aggregate coverage…"
+        )
+
     ctx = ReportContext(
         repo_path=str(path.resolve()),
         generated_at=datetime.now(UTC),
@@ -590,6 +758,8 @@ def scan(
         codeowners=codeowners_report,
         top_central_files=top_central,
         module_graph=module_graph,
+        top_central_models=top_central_models,
+        departure_scenarios=departure_scenarios,
     )
 
     rec_ctx = RecommendationContext(
@@ -671,6 +841,10 @@ def simulate(
     ),
     path: Path = typer.Argument(Path("."), help="Repository path."),
     since_days: int = typer.Option(180, "--since-days"),
+    output: Path = typer.Option(
+        Path("blindspot_departure.html"), "--output", "-o",
+        help="HTML report output path. Set to an empty string to skip writing a file.",
+    ),
     with_narrative: bool = typer.Option(
         False, "--with-narrative",
         help="Add an LLM-generated departure briefing with mitigation steps.",
@@ -734,6 +908,7 @@ def simulate(
             )
         console.print(crit_table)
 
+    departure_narrative = None
     if with_narrative:
         if narrative_lang not in ("en", "tr"):
             console.print(
@@ -752,17 +927,20 @@ def simulate(
                 f"\nGenerating departure narrative ({narrative_lang}) "
                 f"via [bold]{cfg.provider}/{client.model}[/bold]…"
             )
-            narrative = NarrativeEngine(client=client).summarize_departure(
+            departure_narrative = NarrativeEngine(client=client).summarize_departure(
                 report, names=dict(ownership.names), language=narrative_lang,
             )
-            body = f"[bold]{narrative.headline_action}[/bold]\n\n{narrative.executive_summary}"
-            if narrative.mitigations:
+            body = (
+                f"[bold]{departure_narrative.headline_action}[/bold]\n\n"
+                f"{departure_narrative.executive_summary}"
+            )
+            if departure_narrative.mitigations:
                 body += "\n\n[bold]Mitigations:[/bold]\n"
-                body += "\n".join(f"  • {m}" for m in narrative.mitigations)
+                body += "\n".join(f"  • {m}" for m in departure_narrative.mitigations)
             console.print(
                 Panel(
                     body,
-                    title=f"Departure briefing (LLM · {narrative.model})",
+                    title=f"Departure briefing (LLM · {departure_narrative.model})",
                     border_style="cyan",
                 )
             )
@@ -772,6 +950,21 @@ def simulate(
             console.print(f"[yellow]Narrative skipped:[/yellow] {e}")
         except NarrativeError as e:
             console.print(f"[red]Narrative failed:[/red] {e}")
+
+    if str(output):
+        ctx = DepartureContext(
+            repo_path=str(path.resolve()),
+            generated_at=datetime.now(UTC),
+            since_days=since_days,
+            blindspot_version=__version__,
+            departure=report,
+            names=dict(ownership.names),
+            narrative=departure_narrative,
+            remaining_gaps=compute_remaining_gaps(report),
+        )
+        html = ReportRenderer().render_departure(ctx)
+        output.write_text(html, encoding="utf-8")
+        console.print(f"\n[green]✓[/green] Departure report written to [bold]{output}[/bold]")
 
 
 @app.command()

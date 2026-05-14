@@ -7,6 +7,7 @@ from blindspot.dependency_graph import (
     ImportanceEngine,
     top_n,
 )
+from blindspot.dependency_graph.builder import auto_detect_code_root
 from blindspot.dependency_graph.extractors import PythonImportExtractor
 from blindspot.dependency_graph.extractors.base import ExtractionContext
 from blindspot.dependency_graph.models import DependencyGraph
@@ -77,6 +78,77 @@ def test_python_ignores_unresolvable_imports(tmp_path: Path):
     assert imports == []
 
 
+def test_python_ast_resolves_aliased_import(tmp_path: Path):
+    _write(tmp_path, "core/util.py", "")
+    _write(tmp_path, "main.py", "import core.util as cu\n")
+    graph = DependencyGraphBuilder(include_tests=True).build(tmp_path)
+    assert graph.nx_graph.has_edge("main.py", "core/util.py")
+
+
+def test_python_ast_resolves_parenthesised_from_import(tmp_path: Path):
+    _write(tmp_path, "core/util.py", "")
+    _write(tmp_path, "core/__init__.py", "")
+    _write(tmp_path, "main.py", "from core.util import (\n    foo,\n    bar,\n)\n")
+    graph = DependencyGraphBuilder(include_tests=True).build(tmp_path)
+    assert graph.nx_graph.has_edge("main.py", "core/util.py")
+
+
+def test_python_ast_records_inheritance_edge(tmp_path: Path):
+    # base.py declares Base; sub.py imports it and inherits → edge expected.
+    _write(tmp_path, "base.py", "class Base:\n    pass\n")
+    _write(tmp_path, "sub.py", "from base import Base\nclass Sub(Base):\n    pass\n")
+    graph = DependencyGraphBuilder(include_tests=True).build(tmp_path)
+    assert graph.nx_graph.has_edge("sub.py", "base.py")
+
+
+def test_python_ast_detects_dataclass_model(tmp_path: Path):
+    from blindspot.dependency_graph.extractors.base import ExtractionContext
+    _write(tmp_path, "models.py", (
+        "from dataclasses import dataclass\n"
+        "@dataclass\n"
+        "class User:\n    name: str\n"
+    ))
+    ctx = ExtractionContext(repo_root=tmp_path, repo_files={"models.py"})
+    PythonImportExtractor().extract(
+        "models.py", (tmp_path / "models.py").read_text(), ctx,
+    )
+    assert ctx.model_files.get("models.py") == 1
+
+
+def test_python_ast_detects_pydantic_basemodel(tmp_path: Path):
+    from blindspot.dependency_graph.extractors.base import ExtractionContext
+    _write(tmp_path, "schemas.py", (
+        "from pydantic import BaseModel\n"
+        "class User(BaseModel):\n    name: str\n"
+        "class Order(BaseModel):\n    id: int\n"
+    ))
+    ctx = ExtractionContext(repo_root=tmp_path, repo_files={"schemas.py"})
+    PythonImportExtractor().extract(
+        "schemas.py", (tmp_path / "schemas.py").read_text(), ctx,
+    )
+    assert ctx.model_files.get("schemas.py") == 2
+
+
+def test_python_ast_falls_back_to_regex_on_syntax_error(tmp_path: Path):
+    # Broken syntax — AST parse fails. We should still recover the import.
+    _write(tmp_path, "broken.py", "from helper import foo\nclass Bad(:\n")
+    _write(tmp_path, "helper.py", "")
+    graph = DependencyGraphBuilder(include_tests=True).build(tmp_path)
+    assert graph.nx_graph.has_edge("broken.py", "helper.py")
+
+
+def test_python_ast_skips_non_local_inheritance(tmp_path: Path):
+    # If the base class isn't from an in-repo import, no edge is added.
+    _write(tmp_path, "main.py", (
+        "from typing import Generic, TypeVar\n"
+        "T = TypeVar('T')\n"
+        "class Box(Generic[T]):\n    pass\n"
+    ))
+    graph = DependencyGraphBuilder(include_tests=True).build(tmp_path)
+    # No in-repo edges — Generic comes from stdlib.
+    assert list(graph.nx_graph.successors("main.py")) == []
+
+
 def test_python_resolves_when_symbol_is_in_module(tmp_path: Path):
     # `from pkg.bar import helper` where helper is defined inside bar.py
     ctx = ExtractionContext(
@@ -106,6 +178,56 @@ def test_builder_walks_repo_and_builds_graph(tmp_path: Path):
     assert "node_modules/whatever.py" not in nodes
     # Edge from main → util
     assert graph.nx_graph.has_edge("app/main.py", "core/util.py")
+
+
+def test_auto_detect_picks_src_when_present(tmp_path: Path):
+    _write(tmp_path, "src/pkg/__init__.py", "")
+    _write(tmp_path, "src/pkg/main.py", "")
+    _write(tmp_path, "scripts/build.py", "")
+    assert auto_detect_code_root(tmp_path) == "src"
+
+
+def test_auto_detect_falls_back_when_no_known_root(tmp_path: Path):
+    _write(tmp_path, "pkg/main.py", "")
+    _write(tmp_path, "scripts/build.py", "")
+    assert auto_detect_code_root(tmp_path) == ""
+
+
+def test_builder_constrains_walk_to_code_root(tmp_path: Path):
+    _write(tmp_path, "src/pkg/__init__.py", "")
+    _write(tmp_path, "src/pkg/main.py", "from pkg.util import x\n")
+    _write(tmp_path, "src/pkg/util.py", "")
+    _write(tmp_path, "scripts/build.py", "from pkg.main import y\n")
+
+    graph = DependencyGraphBuilder(code_root="src").build(tmp_path)
+    nodes = set(graph.nx_graph.nodes())
+    assert "src/pkg/main.py" in nodes
+    assert "src/pkg/util.py" in nodes
+    # scripts/ is OUTSIDE the code root → not a node.
+    assert "scripts/build.py" not in nodes
+
+
+def test_builder_excludes_tests_and_examples_by_default(tmp_path: Path):
+    _write(tmp_path, "src/pkg/__init__.py", "")
+    _write(tmp_path, "src/pkg/main.py", "")
+    _write(tmp_path, "tests/test_main.py", "from pkg.main import x\n")
+    _write(tmp_path, "examples/demo.py", "from pkg.main import y\n")
+    _write(tmp_path, "docs/conf.py", "")
+
+    # Default: include_tests=False → tests/examples/docs excluded.
+    graph = DependencyGraphBuilder().build(tmp_path)
+    nodes = set(graph.nx_graph.nodes())
+    assert "src/pkg/main.py" in nodes
+    assert "tests/test_main.py" not in nodes
+    assert "examples/demo.py" not in nodes
+    assert "docs/conf.py" not in nodes
+
+
+def test_builder_includes_tests_when_opt_in(tmp_path: Path):
+    _write(tmp_path, "pkg/main.py", "")
+    _write(tmp_path, "tests/test_main.py", "from pkg.main import x\n")
+    graph = DependencyGraphBuilder(include_tests=True).build(tmp_path)
+    assert "tests/test_main.py" in set(graph.nx_graph.nodes())
 
 
 def test_builder_skips_oversize_files(tmp_path: Path):

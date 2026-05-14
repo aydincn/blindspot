@@ -4,6 +4,7 @@ from blindspot.actions.models import (
     PRIORITY_ORDER,
     ActionCategory,
     ActionPriority,
+    FragilityPattern,
     RecommendedAction,
 )
 from blindspot.ai_signal.models import AuthorProfile, AuthorProfileType
@@ -91,6 +92,7 @@ class RecommendationEngine:
                     evidence=(
                         f"bus_factor=1, top_owner_coverage={owner_cov:.0%}, files={s.file_count}"
                     ),
+                    pattern=FragilityPattern.SINGLE_OWNER_CONCENTRATION,
                 )
             )
         return out[: self.max_per_rule]
@@ -155,6 +157,7 @@ class RecommendationEngine:
                     evidence=(
                         f"rubber_stamp_ratio={s.rubber_stamp_ratio:.0%}, reviews={s.total_reviews}"
                     ),
+                    pattern=FragilityPattern.REVIEW_WITHOUT_SCRUTINY,
                 )
             )
         return out[: self.max_per_rule]
@@ -222,6 +225,7 @@ class RecommendationEngine:
                     evidence=(
                         f"median_approval={minutes:.0f}min, samples={s.approval_sample_size}"
                     ),
+                    pattern=FragilityPattern.REVIEW_WITHOUT_SCRUTINY,
                 )
             )
         return out[: self.max_per_rule]
@@ -255,6 +259,7 @@ class RecommendationEngine:
                         f"ai_score={ai_score}, quality_risk={quality_pct}, "
                         f"profile={profile.profile_type.value}"
                     ),
+                    pattern=FragilityPattern.VELOCITY_WITHOUT_REVIEW,
                 )
             )
         return out[: self.max_per_rule]

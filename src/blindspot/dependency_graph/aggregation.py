@@ -23,7 +23,7 @@ DEFAULT_TOP_K = 12
 DEFAULT_MIN_WEIGHT = 1
 
 
-def module_of(path: str, depth: int = DEFAULT_DEPTH) -> str:
+def module_of(path: str, depth: int = DEFAULT_DEPTH, peel_prefix: str = "") -> str:
     """Map a repo-relative path to a module name.
 
     Strategy: drop the filename, then keep up to `depth` leading
@@ -31,12 +31,51 @@ def module_of(path: str, depth: int = DEFAULT_DEPTH) -> str:
     "(root)". This way `scripts/foo.mjs` and `scripts/bar.mjs` both
     roll up to the same "scripts" module rather than each becoming
     its own one-file node.
+
+    `peel_prefix` is the common parent prefix shared by *every* file
+    in the graph — stripping it before aggregation lets us drill into
+    the internal architecture instead of bucketing everything into a
+    single top-level module. (e.g. all of Flask's files live under
+    `src/flask/`, so peeling that off makes `json/`, `cli.py`, etc.
+    visible as separate modules.)
     """
-    parts = [p for p in path.split("/") if p]
+    rel = path
+    if peel_prefix:
+        prefix = peel_prefix.rstrip("/") + "/"
+        if rel.startswith(prefix):
+            rel = rel[len(prefix):]
+    parts = [p for p in rel.split("/") if p]
     if len(parts) <= 1:
         return "(root)"
     parent_parts = parts[:-1]
     return "/".join(parent_parts[:depth])
+
+
+def _longest_common_parent(files: list[str]) -> str:
+    """Find the longest directory prefix shared by every file's parent.
+
+    Used to auto-detect the 'architectural root' for a repo whose code
+    all lives under a deeply nested folder (e.g. `src/flask/`). Returns
+    an empty string when there's no common prefix.
+    """
+    parents = [
+        f.rsplit("/", 1)[0].split("/") if "/" in f else []
+        for f in files
+    ]
+    if not parents or not parents[0]:
+        return ""
+    common = list(parents[0])
+    for p in parents[1:]:
+        new: list[str] = []
+        for a, b in zip(common, p):
+            if a == b:
+                new.append(a)
+            else:
+                break
+        common = new
+        if not common:
+            return ""
+    return "/".join(common)
 
 
 def aggregate_modules(
@@ -49,10 +88,15 @@ def aggregate_modules(
     if graph.file_count == 0:
         return ModuleGraph(nodes=(), edges=())
 
+    # Auto-peel a shared parent prefix so we surface internal architecture
+    # rather than a single "everything" module.
+    nodes_list = list(graph.nx_graph.nodes())
+    peel = _longest_common_parent(nodes_list)
+
     file_to_module: dict[str, str] = {}
     file_counts: dict[str, int] = {}
     for f in graph.nx_graph.nodes():
-        m = module_of(f, depth)
+        m = module_of(f, depth, peel_prefix=peel)
         file_to_module[f] = m
         file_counts[m] = file_counts.get(m, 0) + 1
 

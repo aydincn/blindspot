@@ -38,10 +38,30 @@ class ModuleGraph:
     edges: tuple[ModuleEdge, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class CentralModel:
+    """A file containing one or more 'model' classes (dataclass, pydantic
+    BaseModel, attrs, etc.) ranked by how many other files depend on it.
+
+    `model_class_count` is how many model classes the file defines.
+    `dependents` is the in-degree on the dependency graph — i.e. how
+    many files import this one. High dependents + model class count =
+    a structural type other code is bound to.
+    """
+    file: str
+    model_class_count: int
+    dependents: int
+    top_owner: str | None = None
+    top_owner_coverage: float = 0.0
+
+
 @dataclass
 class DependencyGraph:
     """Repo-relative file dependency graph backed by networkx."""
     nx_graph: nx.DiGraph = field(default_factory=nx.DiGraph)
+    model_files: dict[str, int] = field(default_factory=dict)
+    """Map of file → number of model classes defined in it. Populated
+    by AST-capable extractors (currently only Python)."""
 
     def add_dependency(self, importer: str, imported: str) -> None:
         if importer == imported:
@@ -68,9 +88,26 @@ class DependencyGraph:
             return 0
         return self.nx_graph.in_degree(file)
 
+    def top_models(self, limit: int = 10) -> list[CentralModel]:
+        """Rank model files by dependents desc, then class count desc."""
+        out: list[CentralModel] = []
+        for f, count in self.model_files.items():
+            if f not in self.nx_graph.nodes():
+                continue
+            out.append(
+                CentralModel(
+                    file=f,
+                    model_class_count=count,
+                    dependents=self.in_degree(f),
+                )
+            )
+        out.sort(key=lambda m: (-m.dependents, -m.model_class_count, m.file))
+        return out[:limit]
+
 
 __all__ = [
     "CentralFile",
+    "CentralModel",
     "DependencyGraph",
     "ModuleEdge",
     "ModuleGraph",

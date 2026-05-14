@@ -36,12 +36,9 @@ demo_report*.html
 # Any report produced from a private/customer repo — keep out of version control.
 report*.html
 report_*.html
+blindspot_report*.html
+blindspot_departure*.html
+departure_*.html
 kfactor.db
 *.sqlite
 *.sqlite3
-
-docs/user_profile.md
-docs/feedback_collaboration_style.md
-docs/project_blindspot.md
-docs/project_competitive_and_compliance.md
-docs/MEMORY.md

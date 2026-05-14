@@ -23,6 +23,18 @@ class ActionCategory(str, Enum):
     CODEOWNERS_UPDATE = "Codeowners Update"
 
 
+class FragilityPattern(str, Enum):
+    """Named patterns for AI-era engineering fragility.
+
+    Slugs stay machine-readable; the human label lives on the enum value.
+    Recommendations are tagged with at most one pattern so the report
+    surface can group them and so the README can document each one.
+    """
+    REVIEW_WITHOUT_SCRUTINY = "Review without scrutiny"
+    SINGLE_OWNER_CONCENTRATION = "Single-owner concentration"
+    VELOCITY_WITHOUT_REVIEW = "Velocity without review"
+
+
 @dataclass(frozen=True, slots=True)
 class RecommendedAction:
     priority: ActionPriority
@@ -31,11 +43,13 @@ class RecommendedAction:
     description: str
     target: str
     evidence: str
+    pattern: FragilityPattern | None = None
 
 
 __all__ = [
     "ActionCategory",
     "ActionPriority",
+    "FragilityPattern",
     "PRIORITY_ORDER",
     "RecommendedAction",
 ]

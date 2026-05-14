@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>blindspot — Departure Briefing</title>
+<style>
+:root {
+  --bg: #fafbfc;
+  --fg: #0f172a;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --card: #ffffff;
+  --accent: #2563eb;
+  --critical: #dc2626;
+  --high: #d97706;
+  --medium: #0891b2;
+  --healthy: #16a34a;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.container { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
+header { padding-bottom: 24px; border-bottom: 1px solid var(--border); margin-bottom: 32px; }
+header h1 { margin: 0 0 4px; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
+header .tagline { margin: 0 0 12px; color: var(--muted); font-size: 15px; }
+header .who { margin: 16px 0 0; font-size: 16px; }
+header .who strong { color: var(--critical); }
+header .meta { margin: 12px 0 0; color: var(--muted); font-size: 13px; }
+header .meta code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+section { margin-bottom: 40px; }
+h2 { font-size: 18px; font-weight: 600; margin: 0 0 16px; letter-spacing: -0.01em; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  border-left: 4px solid var(--border);
+}
+.card.crit { border-left-color: var(--critical); }
+.card.high { border-left-color: var(--high); }
+.card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+.card .value { font-size: 28px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.card .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.card .value.v-crit { color: var(--critical); }
+.card .value.v-high { color: var(--high); }
+table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; padding: 12px 16px; background: #f8fafc; }
+td { padding: 12px 16px; border-top: 1px solid var(--border); }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+td code, code.path { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 13px; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+.badge.critical { background: #fef2f2; color: var(--critical); }
+.badge.high { background: #fef3c7; color: var(--high); }
+.badge.medium { background: #ecfeff; color: var(--medium); }
+.badge.healthy, .badge.low { background: #f0fdf4; color: var(--healthy); }
+.empty { color: var(--muted); padding: 16px; text-align: center; background: var(--card); border: 1px dashed var(--border); border-radius: 8px; }
+footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+footer p { margin: 4px 0; }
+.note { background: #fff7ed; border-left: 3px solid var(--high); padding: 12px 16px; border-radius: 4px; color: #92400e; font-size: 13px; margin-bottom: 24px; }
+.narrative { background: linear-gradient(180deg, #f0f9ff 0%, #ffffff 100%); border: 1px solid #bae6fd; border-radius: 10px; padding: 24px 28px; margin-bottom: 32px; }
+.narrative .eyebrow { color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 6px; }
+.narrative .headline { font-size: 18px; font-weight: 600; line-height: 1.4; margin: 0 0 14px; color: var(--fg); }
+.narrative .body { font-size: 14px; line-height: 1.65; color: #1e293b; }
+.narrative .body p { margin: 0 0 10px; }
+.narrative .mitigations { margin: 14px 0 0; padding: 14px 0 0; border-top: 1px solid #e0f2fe; }
+.narrative .mitigations h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.06em; }
+.narrative .mitigations ol { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.6; color: #1e293b; }
+.narrative .footer-meta { margin-top: 14px; padding-top: 12px; border-top: 1px solid #e0f2fe; color: var(--muted); font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>blindspot</h1>
+  <p class="tagline">Departure briefing — what we lose if these people leave</p>
+  <p class="who">
+    Simulated departure:
+    {% for who in ctx.departure.departing %}
+      <strong>{{ ctx.label(who) }}</strong>{% if not loop.last %}, {% endif %}
+    {% endfor %}
+  </p>
+  <p class="meta">
+    Repo: <code>{{ ctx.repo_path }}</code> ·
+    Window: {{ ctx.since_days }} days ·
+    Generated: {{ ctx.generated_at.strftime("%Y-%m-%d %H:%M UTC") }} ·
+    blindspot {{ ctx.blindspot_version }}
+  </p>
+</header>
+
+{% if ctx.narrative %}
+<div class="narrative">
+  <div class="eyebrow">Executive briefing</div>
+  <div class="headline">{{ ctx.narrative.headline_action }}</div>
+  <div class="body">
+    {% for paragraph in ctx.narrative.executive_summary.split("\n\n") %}
+    {% if paragraph.strip() %}<p>{{ paragraph }}</p>{% endif %}
+    {% endfor %}
+  </div>
+  {% if ctx.narrative.mitigations %}
+  <div class="mitigations">
+    <h4>Suggested mitigations</h4>
+    <ol>
+      {% for m in ctx.narrative.mitigations %}
+      <li>{{ m }}</li>
+      {% endfor %}
+    </ol>
+  </div>
+  {% endif %}
+  <div class="footer-meta">
+    Generated by {{ ctx.narrative.model or "LLM" }} ·
+    Language: {{ ctx.narrative.language }} ·
+    Treat as a draft to discuss with the team, not a directive.
+  </div>
+</div>
+{% endif %}
+
+{% set d = ctx.departure %}
+{% set orphan_pct = (d.orphaned_files / d.total_files) if d.total_files else 0 %}
+
+<section>
+  <h2>Impact summary</h2>
+  <div class="cards">
+    <div class="card">
+      <div class="label">Files in scope</div>
+      <div class="value">{{ d.total_files }}</div>
+      <div class="sub">tracked by ownership engine</div>
+    </div>
+    <div class="card {% if d.affected_files %}high{% endif %}">
+      <div class="label">Files affected</div>
+      <div class="value {% if d.affected_files %}v-high{% endif %}">{{ d.affected_files }}</div>
+      <div class="sub">&gt;40% coverage loss</div>
+    </div>
+    <div class="card {% if d.orphaned_files %}crit{% endif %}">
+      <div class="label">Orphaned files</div>
+      <div class="value {% if d.orphaned_files %}v-crit{% endif %}">{{ d.orphaned_files }}</div>
+      <div class="sub">no strong remaining owner ({{ orphan_pct | pct }})</div>
+    </div>
+    <div class="card">
+      <div class="label">Avg coverage loss</div>
+      <div class="value">{{ d.avg_coverage_loss | pct }}</div>
+      <div class="sub">across all in-scope files</div>
+    </div>
+  </div>
+</section>
+
+{% if d.services %}
+<section>
+  <h2>Service impact</h2>
+  <p class="note">
+    Service-level rollup. Severity is <strong>critical</strong> when any file in the service
+    becomes orphaned (no remaining owner with ≥30% coverage), <strong>high</strong> when the
+    maximum single-file loss is above 70%, <strong>medium</strong> above 40%, otherwise low.
+    Sorted by orphan count, then by average loss.
+  </p>
+  <table>
+    <thead><tr>
+      <th>Service</th>
+      <th class="num">Files</th>
+      <th class="num">Affected</th>
+      <th class="num">Orphaned</th>
+      <th class="num">Avg loss</th>
+      <th class="num">Max loss</th>
+      <th>Severity</th>
+    </tr></thead>
+    <tbody>
+    {% for s in d.services[:20] %}
+      <tr>
+        <td><code class="path">{{ s.service }}</code></td>
+        <td class="num">{{ s.file_count }}</td>
+        <td class="num">{{ s.affected_files }}</td>
+        <td class="num{% if s.orphaned_files %}{% endif %}">
+          {% if s.orphaned_files %}<span class="badge critical">{{ s.orphaned_files }}</span>{% else %}{{ s.orphaned_files }}{% endif %}
+        </td>
+        <td class="num">{{ s.avg_coverage_loss | pct }}</td>
+        <td class="num">{{ s.max_coverage_loss | pct }}</td>
+        <td><span class="badge {{ s.severity }}">{{ s.severity | upper }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% set critical_files = d.files | selectattr("severity", "equalto", "critical") | list %}
+{% if critical_files %}
+<section>
+  <h2>Files becoming orphaned</h2>
+  <p class="note">
+    These files lose their primary expert and no remaining contributor holds enough
+    coverage (≥30%) to be considered a fallback owner. Schedule a knowledge transfer
+    before the departure or designate a successor in CODEOWNERS.
+  </p>
+  <table>
+    <thead><tr>
+      <th>File</th>
+      <th class="num">Coverage loss</th>
+      <th>Remaining top owner</th>
+      <th class="num">Their coverage</th>
+    </tr></thead>
+    <tbody>
+    {% for f in critical_files[:30] %}
+      <tr>
+        <td><code class="path">{{ f.file }}</code></td>
+        <td class="num"><span class="badge critical">{{ f.coverage_loss | pct }}</span></td>
+        <td>{% if f.remaining_top_owner %}{{ ctx.label(f.remaining_top_owner) }}{% else %}<em style="color:var(--muted);">no one left</em>{% endif %}</td>
+        <td class="num">{{ f.remaining_top_coverage | pct }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if critical_files | length > 30 %}
+  <p class="empty">… and {{ critical_files | length - 30 }} more orphan-becoming files.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% set high_files = d.files | selectattr("severity", "equalto", "high") | list %}
+{% if high_files %}
+<section>
+  <h2>Heavily-impacted files (still owned, barely)</h2>
+  <p class="note">
+    These files don't become orphan but lose more than 70% of their coverage. The
+    remaining owner exists but may need pairing or refresher sessions to fully take over.
+  </p>
+  <table>
+    <thead><tr>
+      <th>File</th>
+      <th class="num">Coverage loss</th>
+      <th>Remaining top owner</th>
+      <th class="num">Their coverage</th>
+    </tr></thead>
+    <tbody>
+    {% for f in high_files[:20] %}
+      <tr>
+        <td><code class="path">{{ f.file }}</code></td>
+        <td class="num"><span class="badge high">{{ f.coverage_loss | pct }}</span></td>
+        <td>{{ ctx.label(f.remaining_top_owner) if f.remaining_top_owner else "—" }}</td>
+        <td class="num">{{ f.remaining_top_coverage | pct }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if ctx.remaining_gaps %}
+<section>
+  <h2>Potential successors</h2>
+  <p class="note">
+    People who would inherit the most orphan-becoming files as the new top owner.
+    Use this list as a starting point for pairing and successor planning — these are
+    the contributors already closest to the affected work.
+  </p>
+  <table>
+    <thead><tr>
+      <th>Person</th>
+      <th class="num">Files they'd inherit</th>
+      <th class="num">Avg coverage on inherited files</th>
+    </tr></thead>
+    <tbody>
+    {% for g in ctx.remaining_gaps[:10] %}
+      <tr>
+        <td>{{ ctx.label(g.email) }}</td>
+        <td class="num">{{ g.picked_up_files }}</td>
+        <td class="num">{{ g.avg_coverage_on_picked_up | pct }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<footer>
+  <p>
+    Generated by blindspot {{ ctx.blindspot_version }} ·
+    Departure briefing for: {% for who in ctx.departure.departing %}{{ ctx.label(who) }}{% if not loop.last %}, {% endif %}{% endfor %}
+  </p>
+  <p>
+    A file is <strong>orphan</strong> when no remaining contributor holds ≥30%
+    coverage. A file is <strong>affected</strong> when the simulated departure removes
+    more than 40% of effective ownership. Coverage = recency- and review-weighted share
+    of contribution.
+  </p>
+</footer>
+
+</div>
+</body>
+</html>

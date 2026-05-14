@@ -3,6 +3,11 @@ from blindspot.collector.github.client import (
     GitHubError,
     RateLimitExhausted,
 )
+from blindspot.collector.github.config import (
+    GitHubConfig,
+    GitHubConfigError,
+    load_github_config,
+)
 from blindspot.collector.github.gh_client import (
     GhCliClient,
     is_gh_authenticated,
@@ -25,6 +30,8 @@ from blindspot.collector.github.remote import (
 __all__ = [
     "GhCliClient",
     "GitHubClient",
+    "GitHubConfig",
+    "GitHubConfigError",
     "GitHubError",
     "GitHubRemote",
     "PRCollector",
@@ -36,6 +43,7 @@ __all__ = [
     "detect_github_remote",
     "is_gh_authenticated",
     "is_gh_available",
+    "load_github_config",
     "make_github_client",
     "parse_remote_url",
 ]

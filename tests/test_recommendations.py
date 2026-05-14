@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from blindspot.actions import (
     ActionCategory,
     ActionPriority,
+    FragilityPattern,
     RecommendationContext,
     RecommendationEngine,
 )
@@ -190,6 +191,80 @@ def test_returns_no_actions_when_state_is_healthy():
     ctx = RecommendationContext()
     actions = RecommendationEngine().recommend(ctx)
     assert actions == []
+
+
+def test_service_bus_factor_tagged_with_single_owner_concentration():
+    ctx = RecommendationContext(
+        services=(_service("payment", 8, "alice@x.com", 0.85),),
+    )
+    actions = RecommendationEngine().recommend(ctx)
+    a = next(a for a in actions if a.category == ActionCategory.OWNERSHIP_DIVERSIFICATION)
+    assert a.pattern == FragilityPattern.SINGLE_OWNER_CONCENTRATION
+
+
+def test_rubber_stamp_tagged_with_review_without_scrutiny():
+    stats = FileReviewStats(
+        file="src/core.py",
+        unique_reviewers=2,
+        total_reviews=10,
+        total_comments=1,
+        rubber_stamp_ratio=0.9,
+        diversity_hhi=0.5,
+    )
+    ctx = RecommendationContext(review_stats={"src/core.py": stats})
+    actions = RecommendationEngine().recommend(ctx)
+    a = next(a for a in actions if "depth" in a.title.lower())
+    assert a.pattern == FragilityPattern.REVIEW_WITHOUT_SCRUTINY
+
+
+def test_fast_approval_tagged_with_review_without_scrutiny():
+    stats = FileReviewStats(
+        file="src/critical.py",
+        unique_reviewers=2,
+        total_reviews=5,
+        total_comments=5,
+        rubber_stamp_ratio=0.0,
+        diversity_hhi=0.5,
+        median_approval_latency_seconds=60,
+        approval_sample_size=5,
+    )
+    ctx = RecommendationContext(review_stats={"src/critical.py": stats})
+    actions = RecommendationEngine().recommend(ctx)
+    a = next(a for a in actions if "Slow down" in a.title)
+    assert a.pattern == FragilityPattern.REVIEW_WITHOUT_SCRUTINY
+
+
+def test_fake_velocity_tagged_with_velocity_without_review():
+    ai = AISignal(
+        author_email="risky@x.com",
+        flag=AIFlag.HIGH,
+        score=0.85,
+        frequency_score=1.0, volume_score=1.0, message_score=0.6,
+        large_commit_score=0.6, timing_score=0.4,
+        recent_commits=30, baseline_commits=20,
+    )
+    quality = QualitySignal(
+        author_email="risky@x.com",
+        risk_score=0.75,
+        churn_score=1.0, bug_keyword_score=1.0, revert_score=0.3,
+        review_rejection_score=0.0, test_coverage_score=1.0,
+        pr_description_score=0.0,
+        recent_commits=30,
+    )
+    profile = AuthorProfile(
+        author_email="risky@x.com",
+        author_name="Risky Dev",
+        profile_type=AuthorProfileType.FAKE_VELOCITY,
+        signal_strength=SignalStrength.LOW,
+        evidence_weight=0.60,
+        ai_signal=ai,
+        quality_signal=quality,
+        explanation="…",
+    )
+    ctx = RecommendationContext(author_profiles={"risky@x.com": profile})
+    actions = RecommendationEngine().recommend(ctx)
+    a = next(a for a in actions if a.category == ActionCategory.QUALITY_GUARDRAIL)
+    assert a.pattern == FragilityPattern.VELOCITY_WITHOUT_REVIEW
 
 
 def test_decay_filtered_when_importance_below_threshold():

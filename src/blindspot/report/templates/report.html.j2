@@ -90,6 +90,17 @@ footer p { margin: 4px 0; }
   overflow-x: auto;
 }
 .mermaid { font-size: 13px; }
+.departure-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.departure-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.departure-who { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.departure-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.departure-stat .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.departure-stat .value { font-size: 20px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.departure-stat .value.v-crit { color: var(--critical); }
+.departure-services .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+.departure-services ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.muted-suffix { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 4px; }
+.pattern-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; background: #eef2ff; color: #4338ca; margin-right: 6px; }
 </style>
 {% if ctx.module_graph and ctx.module_graph.edges %}
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
@@ -146,6 +157,96 @@ footer p { margin: 4px 0; }
     </div>
   </div>
   <p class="summary">{{ ctx.resilience.summary }}</p>
+</section>
+{% endif %}
+
+{% if ctx.departure_scenarios %}
+<section>
+  <h2>Departure scenarios — what we lose if one person leaves</h2>
+  <p class="note">
+    For each of the top contributors by aggregate ownership coverage, this
+    is what would happen if they left tomorrow: how many files lose their
+    primary expert, how many become unowned (orphan, top remaining
+    coverage &lt; 30%), and which services take the largest hit. Use this
+    to prioritise pair-work and knowledge transfer.
+  </p>
+  <div class="departure-grid">
+    {% for scenario in ctx.departure_scenarios %}
+    {% set who = scenario.departing[0] if scenario.departing else "" %}
+    {% set svc_top = scenario.services[:3] %}
+    {% set orphan_pct = (scenario.orphaned_files / scenario.total_files) if scenario.total_files else 0 %}
+    {% set sev = "critical" if scenario.orphaned_files > 0 else ("high" if scenario.avg_coverage_loss > 0.30 else "medium") %}
+    <div class="departure-card">
+      <div class="departure-who">
+        <span class="badge {{ sev }}">{{ sev | upper }}</span>
+        <strong>If {{ ctx.label(who) }} leaves</strong>
+      </div>
+      <div class="departure-stats">
+        <div class="departure-stat">
+          <div class="label">Files affected</div>
+          <div class="value">{{ scenario.affected_files }}<span class="muted-suffix"> / {{ scenario.total_files }}</span></div>
+        </div>
+        <div class="departure-stat">
+          <div class="label">Orphan files</div>
+          <div class="value{% if scenario.orphaned_files %} v-crit{% endif %}">{{ scenario.orphaned_files }}<span class="muted-suffix"> ({{ orphan_pct | pct }})</span></div>
+        </div>
+        <div class="departure-stat">
+          <div class="label">Avg coverage loss</div>
+          <div class="value">{{ scenario.avg_coverage_loss | pct }}</div>
+        </div>
+      </div>
+      {% if svc_top %}
+      <div class="departure-services">
+        <div class="label">Most-affected services</div>
+        <ul>
+        {% for s in svc_top %}
+          <li>
+            <code class="path">{{ s.service }}</code>
+            <span class="muted-suffix">{{ s.affected_files }}/{{ s.file_count }} files
+              {%- if s.orphaned_files %}, {{ s.orphaned_files }} orphan{%- endif -%}
+              , {{ s.avg_coverage_loss | pct }} avg loss</span>
+          </li>
+        {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if ctx.top_central_models %}
+<section>
+  <h2>Central models — structural types other code is bound to</h2>
+  <p class="note">
+    Files that define data-model classes (dataclasses, pydantic
+    <code>BaseModel</code>, attrs, msgspec, TypedDict) which other files
+    in the repo import. A high <strong>dependents</strong> count means
+    many call sites are coupled to this type; breaking changes here ripple.
+    Sole-owner concentration on these files is a stronger warning than
+    on regular code.
+  </p>
+  <table>
+    <thead><tr>
+      <th>File</th>
+      <th class="num">Model classes</th>
+      <th class="num">Dependents</th>
+      <th>Top owner</th>
+      <th class="num">Their coverage</th>
+    </tr></thead>
+    <tbody>
+    {% for m in ctx.top_central_models %}
+      <tr>
+        <td><code class="path">{{ m.file }}</code></td>
+        <td class="num">{{ m.model_class_count }}</td>
+        <td class="num">{{ m.dependents }}</td>
+        <td>{% if m.top_owner %}{{ ctx.label(m.top_owner) }}{% else %}—{% endif %}</td>
+        <td class="num">{% if m.top_owner %}{{ m.top_owner_coverage | pct }}{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
 </section>
 {% endif %}
 
@@ -500,6 +601,9 @@ graph LR
         </td>
         <td>{{ a.category.value }}</td>
         <td>
+          {% if a.pattern %}
+          <span class="pattern-badge" title="Recurring fragility pattern">{{ a.pattern.value }}</span>
+          {% endif %}
           <strong>{{ a.title }}</strong>
           <div style="margin-top:4px;color:var(--muted);font-size:13px;">{{ a.description }}</div>
           {% if ctx.narrative and ctx.narrative.rationales.get(a.target) %}

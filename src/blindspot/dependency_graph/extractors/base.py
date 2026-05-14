@@ -13,10 +13,15 @@ class ExtractionContext:
     - `namespace_index` is a language-specific map populated in a first pass
       (e.g. .NET / Java / Kotlin "namespace → list of files"). Other
       extractors don't need it.
+    - `model_files` is populated by AST-capable extractors to flag files
+      that define "central model" classes (dataclasses, pydantic models,
+      attrs/msgspec). The HTML report surfaces these separately so a
+      reader can find the structural types fast.
     """
     repo_root: Path
     repo_files: set[str] = field(default_factory=set)
     namespace_index: dict[str, list[str]] = field(default_factory=dict)
+    model_files: dict[str, int] = field(default_factory=dict)
 
 
 class ImportExtractor(Protocol):

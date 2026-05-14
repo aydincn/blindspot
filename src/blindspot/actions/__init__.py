@@ -2,6 +2,7 @@ from blindspot.actions.models import (
     PRIORITY_ORDER,
     ActionCategory,
     ActionPriority,
+    FragilityPattern,
     RecommendedAction,
 )
 from blindspot.actions.recommender import RecommendationContext, RecommendationEngine
@@ -9,6 +10,7 @@ from blindspot.actions.recommender import RecommendationContext, RecommendationE
 __all__ = [
     "ActionCategory",
     "ActionPriority",
+    "FragilityPattern",
     "PRIORITY_ORDER",
     "RecommendationContext",
     "RecommendationEngine",

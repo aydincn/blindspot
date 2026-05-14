@@ -152,14 +152,20 @@ def make_github_client(
 ) -> tuple[Any, str]:
     """Return (client, backend_label).
 
-    backend_label is one of: 'gh', 'token', 'anonymous'.
+    backend_label is one of: 'token', 'gh', 'anonymous'.
+
+    An explicit token wins over the `gh` CLI: if the caller bothered to
+    configure one (CLI flag or .blindspot.yaml), respect it — this keeps
+    behaviour predictable in CI where both a token and a logged-in `gh`
+    might be present. Without a token, fall back to `gh` CLI, then to
+    anonymous access (public repos only).
     """
     from blindspot.collector.github.client import GitHubClient
 
-    if prefer_gh and is_gh_available() and is_gh_authenticated():
-        return GhCliClient(), "gh"
     if token:
         return GitHubClient(token=token), "token"
+    if prefer_gh and is_gh_available() and is_gh_authenticated():
+        return GhCliClient(), "gh"
     return GitHubClient(), "anonymous"
 
 
