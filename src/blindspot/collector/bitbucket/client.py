@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 API_ROOT = "https://api.bitbucket.org/2.0"
-DEFAULT_USER_AGENT = "blindspot/0.0.2"
+DEFAULT_USER_AGENT = "blindspot/0.0.3"
 
 
 class BitbucketError(RuntimeError):

@@ -9,7 +9,6 @@ from blindspot.dependency_graph.extractors.base import (
     ExtractionContext,
     ImportExtractor,
 )
-from blindspot.dependency_graph.llm_fallback import LLMImportExtractor
 from blindspot.dependency_graph.models import DependencyGraph
 
 DEFAULT_MAX_FILE_BYTES = 1_048_576  # skip files larger than 1 MB
@@ -46,7 +45,6 @@ class DependencyGraphBuilder:
     extractors: dict[str, ImportExtractor] = field(
         default_factory=lambda: dict(DEFAULT_EXTRACTORS)
     )
-    llm_fallback: LLMImportExtractor | None = None
     file_filter: FileFilter | None = None
     max_file_bytes: int = DEFAULT_MAX_FILE_BYTES
     code_root: str = ""
@@ -133,10 +131,6 @@ class DependencyGraphBuilder:
                 imports = extractor.extract(rel, content, ctx)
             except Exception:
                 imports = []
-            # LLM fallback: if static returned nothing but content looks like
-            # it has imports, ask the LLM. Only runs when configured.
-            if self.llm_fallback is not None:
-                imports = self.llm_fallback.maybe_extract(rel, content, ctx, imports)
             for target in imports:
                 graph.add_dependency(rel, target)
 

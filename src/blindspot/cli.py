@@ -33,6 +33,8 @@ from blindspot.collector.filters import FileFilter
 from blindspot.collector.github import (
     PRCollector,
     detect_github_remote,
+    is_gh_authenticated,
+    is_gh_available,
     load_github_config,
     make_github_client,
 )
@@ -46,11 +48,11 @@ from blindspot.dependency_graph import (
     top_n as central_top_n,
 )
 from blindspot.dependency_graph.builder import auto_detect_code_root
-from blindspot.dependency_graph.llm_fallback import LLMImportExtractor
 from blindspot.diff_analysis import DiffChurnSummary, classify_file, summarise
 from blindspot.narrative import (
     NarrativeConfigError,
     NarrativeEngine,
+    generate_narrative,
     load_narrative_config,
 )
 from blindspot.narrative.client import MissingAPIKey, NarrativeError, build_client
@@ -115,12 +117,13 @@ def scan(
     since_days: int = typer.Option(180, "--since-days", help="Analysis window in days."),
     include_merges: bool = typer.Option(False, "--include-merges"),
     with_reviews: bool = typer.Option(
-        False,
-        "--with-reviews",
-        help="Fetch PR/review data. Auto-detects GitHub or Bitbucket Cloud "
-        "from the git remote. GitHub: anonymous (60/hr) or gh CLI. Bitbucket: "
-        "requires --bitbucket-username + --bitbucket-app-password or a "
-        "bitbucket: block in .blindspot.yaml.",
+        True,
+        "--with-reviews/--no-reviews",
+        help="Auto-fetch PR/review data when credentials are available "
+        "(GitHub: token or gh CLI; Bitbucket: app password). On by "
+        "default — if no credentials are detected, the scan continues "
+        "silently and the report shows how to enable it. "
+        "Use --no-reviews to skip entirely.",
     ),
     max_prs: int = typer.Option(
         50, "--max-prs", help="Maximum PRs to fetch when --with-reviews is set."
@@ -145,11 +148,6 @@ def scan(
         False,
         "--experimental-ai-signal",
         help="EXPERIMENTAL: classify authors by AI amplification + quality signals.",
-    ),
-    with_trend: bool = typer.Option(
-        False,
-        "--with-trend",
-        help="Compute resilience snapshots at 90/60/30/0 days ago for trend view.",
     ),
     check_codeowners: bool = typer.Option(
         True,
@@ -178,25 +176,9 @@ def scan(
         help="PageRank threshold below which files are excluded from recommendations.",
     ),
     simulate_top_departures: int = typer.Option(
-        3, "--simulate-top-departures",
+        6, "--simulate-top-departures",
         help="Add 'what-if' departure scenarios to the report for the top-N "
         "contributors by aggregate ownership coverage. Set to 0 to disable.",
-    ),
-    llm_graph: bool = typer.Option(
-        False, "--llm-graph",
-        help="Use an LLM to resolve imports for every scanned file and union "
-        "the result with the static extractor (subject to --llm-graph-max-calls). "
-        "Opt-in only; without this flag no LLM call is made for the graph. "
-        "Requires same API config as --with-narrative.",
-    ),
-    llm_graph_max_calls: int = typer.Option(
-        50, "--llm-graph-max-calls",
-        help="Cap on LLM calls during --llm-graph (cost guard).",
-    ),
-    with_narrative: bool = typer.Option(
-        False,
-        "--with-narrative",
-        help="Add an LLM-generated executive summary on top of the report.",
     ),
     narrative_lang: str = typer.Option(
         "en",
@@ -244,58 +226,64 @@ def scan(
     pr_count = 0
     pr_truncated = False
     reviews_enabled = False
+    detected_remote: str | None = None
 
     if with_reviews:
-        # Provider auto-detect: GitHub first (anonymous fallback works),
-        # then Bitbucket Cloud (needs an app password).
+        # Auto-mode: detect a recognised remote, try credentials silently.
+        # When no credentials are available, the scan continues and the
+        # report shows a contextual hint on how to enable review metrics.
         gh_remote = detect_github_remote(path)
         bb_remote = detect_bitbucket_remote(path) if gh_remote is None else None
 
         if gh_remote is not None:
+            detected_remote = "github"
             gh_config = load_github_config(
                 repo_path=path,
                 cli_token=github_token or None,
             )
-            client, backend = make_github_client(
-                prefer_gh=True,
-                token=gh_config.token or None,
+            # Credentials check: explicit token OR gh CLI authenticated.
+            has_creds = bool(gh_config.token) or (
+                is_gh_available() and is_gh_authenticated()
             )
-            limit_msg = {
-                "gh": "via [bold]gh[/bold] CLI (5000/hr)",
-                "token": "via token (5000/hr)",
-                "anonymous": "anonymous (60/hr — public repos only)",
-            }[backend]
-            console.print(
-                f"Fetching up to {max_prs} PRs for [bold]{gh_remote.slug}[/bold] "
-                f"— GitHub {limit_msg}…"
-            )
-            try:
-                pr_collector = PRCollector(
-                    client, gh_remote.owner, gh_remote.repo,
-                    since_days=since_days, max_prs=max_prs,
+            if has_creds:
+                client, backend = make_github_client(
+                    prefer_gh=True,
+                    token=gh_config.token or None,
                 )
-                prs, pr_truncated = pr_collector.collect()
-            except Exception as e:
-                console.print(f"[red]GitHub error:[/red] {e}")
-                prs = []
+                limit_msg = {
+                    "gh": "via [bold]gh[/bold] CLI (5000/hr)",
+                    "token": "via token (5000/hr)",
+                    "anonymous": "anonymous (60/hr — public repos only)",
+                }[backend]
+                console.print(
+                    f"Fetching up to {max_prs} PRs for [bold]{gh_remote.slug}[/bold] "
+                    f"— GitHub {limit_msg}…"
+                )
+                try:
+                    pr_collector = PRCollector(
+                        client, gh_remote.owner, gh_remote.repo,
+                        since_days=since_days, max_prs=max_prs,
+                    )
+                    prs, pr_truncated = pr_collector.collect()
+                except Exception as e:
+                    console.print(f"[red]GitHub error:[/red] {e}")
+                    prs = []
+            else:
+                console.print(
+                    "[dim]GitHub remote detected; review data skipped (no "
+                    "credentials — see report for how to enable).[/dim]"
+                )
         elif bb_remote is not None:
+            detected_remote = "bitbucket"
             bb_config = load_bitbucket_config(
                 repo_path=path,
                 cli_username=bitbucket_username or None,
                 cli_app_password=bitbucket_app_password or None,
             )
-            if not bb_config.is_complete:
-                console.print(
-                    "[yellow]Bitbucket remote detected but no credentials — "
-                    "skipping review data. Add a [bold]bitbucket:[/bold] block "
-                    "to .blindspot.yaml (username + app_password) or pass "
-                    "--bitbucket-username + --bitbucket-app-password.[/yellow]"
-                )
-            else:
+            if bb_config.is_complete:
                 console.print(
                     f"Fetching up to {max_prs} PRs for "
-                    f"[bold]{bb_remote.slug}[/bold] — Bitbucket Cloud "
-                    f"(app password)…"
+                    f"[bold]{bb_remote.slug}[/bold] — Bitbucket Cloud…"
                 )
                 try:
                     bb_client = BitbucketClient(
@@ -313,11 +301,11 @@ def scan(
                 except BitbucketError as e:
                     console.print(f"[red]Bitbucket error:[/red] {e}")
                     prs = []
-        else:
-            console.print(
-                "[yellow]No GitHub or Bitbucket remote detected — "
-                "skipping review data.[/yellow]"
-            )
+            else:
+                console.print(
+                    "[dim]Bitbucket remote detected; review data skipped "
+                    "(no credentials — see report for how to enable).[/dim]"
+                )
 
         pr_count = len(prs)
         if pr_count:
@@ -328,8 +316,6 @@ def scan(
             if pr_truncated:
                 msg += " (truncated — partial data)"
             console.print(f"[green]✓[/green] {msg}")
-        elif gh_remote is not None or bb_remote is not None:
-            console.print("[yellow]No PR data collected.[/yellow]")
 
     ownership = OwnershipEngine().compute(commits, review_graph=review_graph)
 
@@ -361,27 +347,6 @@ def scan(
     if not no_dependency_graph:
         try:
             console.print("Building file dependency graph…")
-            llm_extractor = None
-            if llm_graph:
-                try:
-                    cfg = load_narrative_config(
-                        repo_path=path,
-                        cli_api_key=api_key or None,
-                        cli_model=model or None,
-                        cli_provider=provider or None,
-                    )
-                    llm_client = build_client(cfg.provider, cfg.api_key, cfg.model)
-                    llm_extractor = LLMImportExtractor(
-                        client=llm_client,
-                        max_calls=llm_graph_max_calls,
-                    )
-                    console.print(
-                        f"  LLM graph enabled "
-                        f"([bold]{cfg.provider}/{llm_client.model}[/bold], "
-                        f"max {llm_graph_max_calls} calls)"
-                    )
-                except (NarrativeConfigError, MissingAPIKey) as e:
-                    console.print(f"  [yellow]LLM fallback disabled:[/yellow] {e}")
             # User flag wins; otherwise auto-detect prefers src/ then lib/.
             resolved_code_root = (
                 code_root.strip()
@@ -396,7 +361,6 @@ def scan(
                 )
             graph = DependencyGraphBuilder(
                 file_filter=file_filter,
-                llm_fallback=llm_extractor,
                 code_root=resolved_code_root if resolved_code_root != "." else "",
                 include_tests=include_tests_in_graph,
             ).build(path)
@@ -675,41 +639,39 @@ def scan(
                 co_table.add_row(f"[{color}]{cat}[/{color}]", str(count))
             console.print(co_table)
 
-    trend = None
-    if with_trend:
-        if since_days < 90:
-            console.print(
-                "[yellow]--with-trend wants ≥90 days of history; "
-                f"using available {since_days}-day window.[/yellow]"
+    if since_days < 90:
+        console.print(
+            "[dim]Trend wants ≥90 days of history; "
+            f"using available {since_days}-day window.[/dim]"
+        )
+    trend = TrendEngine().compute(commits)
+    if trend.snapshots:
+        trend_table = Table(title="Resilience trend (overall · ownership · decay)")
+        trend_table.add_column("As of")
+        trend_table.add_column("Overall", justify="right")
+        trend_table.add_column("Ownership", justify="right")
+        trend_table.add_column("Decay", justify="right")
+        trend_table.add_column("Band")
+        for snap in trend.snapshots:
+            label = "now" if snap.days_ago == 0 else f"{snap.days_ago}d ago"
+            bcolor = {
+                "Strong": "green", "Moderate": "cyan",
+                "Fragile": "yellow", "Critical": "red",
+            }[snap.score.band]
+            trend_table.add_row(
+                label,
+                str(snap.score.overall),
+                str(snap.score.ownership) if snap.score.ownership is not None else "—",
+                str(snap.score.decay) if snap.score.decay is not None else "—",
+                f"[{bcolor}]{snap.score.band}[/{bcolor}]",
             )
-        trend = TrendEngine().compute(commits)
-        if trend.snapshots:
-            trend_table = Table(title="Resilience trend (overall · ownership · decay)")
-            trend_table.add_column("As of")
-            trend_table.add_column("Overall", justify="right")
-            trend_table.add_column("Ownership", justify="right")
-            trend_table.add_column("Decay", justify="right")
-            trend_table.add_column("Band")
-            for snap in trend.snapshots:
-                label = "now" if snap.days_ago == 0 else f"{snap.days_ago}d ago"
-                bcolor = {
-                    "Strong": "green", "Moderate": "cyan",
-                    "Fragile": "yellow", "Critical": "red",
-                }[snap.score.band]
-                trend_table.add_row(
-                    label,
-                    str(snap.score.overall),
-                    str(snap.score.ownership) if snap.score.ownership is not None else "—",
-                    str(snap.score.decay) if snap.score.decay is not None else "—",
-                    f"[{bcolor}]{snap.score.band}[/{bcolor}]",
-                )
-            console.print(trend_table)
-            if trend.delta_overall is not None:
-                arrow = "▲" if trend.delta_overall > 0 else ("▼" if trend.delta_overall < 0 else "—")
-                dcolor = "green" if trend.delta_overall > 0 else ("red" if trend.delta_overall < 0 else "dim")
-                console.print(
-                    f"[{dcolor}]{arrow} {trend.delta_overall:+d} overall vs oldest snapshot[/{dcolor}]"
-                )
+        console.print(trend_table)
+        if trend.delta_overall is not None:
+            arrow = "▲" if trend.delta_overall > 0 else ("▼" if trend.delta_overall < 0 else "—")
+            dcolor = "green" if trend.delta_overall > 0 else ("red" if trend.delta_overall < 0 else "dim")
+            console.print(
+                f"[{dcolor}]{arrow} {trend.delta_overall:+d} overall vs oldest snapshot[/{dcolor}]"
+            )
 
     departure_scenarios: tuple[DepartureReport, ...] = ()
     if simulate_top_departures > 0 and ownership.scores:
@@ -745,6 +707,7 @@ def scan(
         decay_services=tuple(decay_services),
         names=dict(ownership.names),
         reviews_enabled=reviews_enabled,
+        detected_remote=detected_remote,
         pr_count=pr_count,
         pr_truncated=pr_truncated,
         top_rubber_stamps=top_rubber,
@@ -793,41 +756,43 @@ def scan(
         console.print(rec_table)
     ctx = replace(ctx, recommendations=recommendations)
 
-    if with_narrative:
-        if narrative_lang not in ("en", "tr"):
+    # Narrative — always-on. Cloud LLM if api_key configured, else
+    # rule-based fallback (deterministic, in-process, no network).
+    if narrative_lang not in ("en", "tr"):
+        console.print(
+            f"[yellow]Unknown --narrative-lang '{narrative_lang}', falling back to 'en'.[/yellow]"
+        )
+        narrative_lang = "en"
+    try:
+        n_cfg = load_narrative_config(
+            repo_path=path,
+            cli_api_key=api_key or None,
+            cli_model=model or None,
+            cli_provider=provider or None,
+        )
+        if n_cfg.api_key:
             console.print(
-                f"[yellow]Unknown --narrative-lang '{narrative_lang}', falling back to 'en'.[/yellow]"
+                f"Generating narrative ({narrative_lang}) via "
+                f"[bold]{n_cfg.provider}/{n_cfg.model or 'default'}[/bold]…"
             )
-            narrative_lang = "en"
-        try:
-            cfg = load_narrative_config(
-                repo_path=path,
-                cli_api_key=api_key or None,
-                cli_model=model or None,
-                cli_provider=provider or None,
-            )
-            client = build_client(cfg.provider, cfg.api_key, cfg.model)
+        else:
             console.print(
-                f"Generating LLM narrative ({narrative_lang}) "
-                f"via [bold]{cfg.provider}/{client.model}[/bold]…"
+                f"Generating rule-based narrative ({narrative_lang}) "
+                f"[dim](in-process, no LLM)[/dim]"
             )
-            narrative = NarrativeEngine(client=client).summarize(
-                ctx, language=narrative_lang
+        narrative = generate_narrative(n_cfg, ctx, language=narrative_lang)
+        ctx = replace(ctx, narrative=narrative)
+        console.print(
+            Panel(
+                f"[bold]{narrative.headline_action}[/bold]\n\n{narrative.executive_summary}",
+                title=f"Executive summary ({narrative.model})",
+                border_style="cyan",
             )
-            ctx = replace(ctx, narrative=narrative)
-            console.print(
-                Panel(
-                    f"[bold]{narrative.headline_action}[/bold]\n\n{narrative.executive_summary}",
-                    title=f"Executive summary (LLM · {narrative.model})",
-                    border_style="cyan",
-                )
-            )
-        except NarrativeConfigError as e:
-            console.print(f"[yellow]Narrative skipped:[/yellow] {e}")
-        except MissingAPIKey as e:
-            console.print(f"[yellow]Narrative skipped:[/yellow] {e}")
-        except NarrativeError as e:
-            console.print(f"[red]Narrative failed:[/red] {e}")
+        )
+    except NarrativeConfigError as e:
+        console.print(f"[yellow]Narrative config error:[/yellow] {e}")
+    except NarrativeError as e:
+        console.print(f"[red]Narrative failed:[/red] {e}")
 
     html = ReportRenderer().render(ctx)
     output.write_text(html, encoding="utf-8")

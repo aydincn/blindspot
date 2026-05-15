@@ -67,13 +67,8 @@ def load_narrative_config(
     model = pick("model", cli_model)
     api_key = pick("api_key", cli_api_key)
 
-    if not api_key:
-        raise NarrativeConfigError(
-            "No API key found. Add it to ./.blindspot.yaml (CWD), "
-            "<scanned-repo>/.blindspot.yaml, "
-            f"{USER_CONFIG_PATH}, or pass --api-key on the command line."
-        )
-
+    # Empty api_key is valid — caller (generate_narrative) falls back to
+    # the rule-based narrator. Only YAML-parse errors propagate.
     return NarrativeConfig(provider=provider, model=model, api_key=api_key)
 
 

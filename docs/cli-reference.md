@@ -34,16 +34,17 @@ blindspot scan /path/to/repo --output report.html
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--with-reviews` | off | Fetch PR/review data. Auto-detects GitHub or Bitbucket Cloud from the git remote. Without it, review-hygiene and PR-mix sections are simply absent. |
-| `--max-prs` | `50` | Maximum PRs to fetch when `--with-reviews` is set. |
+| `--with-reviews` / `--no-reviews` | on (auto) | Auto-fetch PR/review data when credentials are available. The scan never errors on missing credentials — it continues silently and the report shows how to enable. Use `--no-reviews` to skip entirely. |
+| `--max-prs` | `50` | Maximum PRs to fetch when review data is being collected. |
 | `--github-token` | `""` | GitHub personal access token. Overrides `.blindspot.yaml`. Needed for private repos when the `gh` CLI isn't available. Never read from environment variables. |
-| `--bitbucket-username` | `""` | Bitbucket Cloud username. Overrides `.blindspot.yaml`. Never read from environment variables. |
-| `--bitbucket-app-password` | `""` | Bitbucket Cloud app password with `pullrequest:read` + `repository:read` scopes. Overrides `.blindspot.yaml`. |
+| `--bitbucket-username` | `""` | Bitbucket Cloud username (or Atlassian account email for API tokens). Overrides `.blindspot.yaml`. |
+| `--bitbucket-app-password` | `""` | Bitbucket Cloud app password OR Atlassian API token with `pullrequest:read` + `repository:read` scopes. Overrides `.blindspot.yaml`. |
 
 GitHub auth precedence: explicit `--github-token` → `gh` CLI (if
-installed and authenticated) → anonymous (60/hr, public repos only).
-Bitbucket has no anonymous path — credentials are required for
-`--with-reviews` on a Bitbucket remote. See
+installed and authenticated) → anonymous (public repos only).
+Bitbucket has no anonymous path — credentials are required.
+When `--with-reviews` is auto and no credentials are detected, the
+report itself shows the exact setup steps. See
 [configuration.md](configuration.md).
 
 ### Analysis depth
@@ -51,9 +52,11 @@ Bitbucket has no anonymous path — credentials are required for
 | Flag | Default | Meaning |
 |---|---|---|
 | `--experimental-ai-signal` | off | Classify authors by AI-amplification + code-quality signals. Experimental — see [algorithms.md](algorithms.md#10-ai-amplification-detector). |
-| `--with-trend` | off | Compute resilience snapshots at 90/60/30/0 days ago for the trend view. Slower (re-runs the pipeline four times). |
 | `--check-codeowners` / `--no-check-codeowners` | on | Validate the repo's `CODEOWNERS` file (if present) against actual ownership. |
-| `--simulate-top-departures` | `3` | Add "what-if departure" scenario cards to the report for the top-N contributors by aggregate coverage. `0` disables it. |
+| `--simulate-top-departures` | `6` | Add "what-if departure" scenario cards to the report for the top-N contributors by aggregate coverage. `0` disables it. |
+
+The trend section (resilience snapshots at 90/60/30/0 days ago) is
+**always on** — no flag.
 
 ### Dependency graph
 
@@ -64,22 +67,19 @@ Bitbucket has no anonymous path — credentials are required for
 | `--include-tests-in-graph` | off | Include files under `tests/`, `examples/`, `docs/` in the dependency graph. Off by default — those folders distort the architectural view. They still count for ownership and decay regardless. |
 | `--importance-threshold` | `0.005` | PageRank importance below which a file is excluded from recommendations and display tables. Stops one-shot scripts / leaf utilities generating noise. |
 
-### LLM graph resolution
+### Narrative
+
+The narrative section is **always on**. Tier-0 is a rule-based,
+in-process narrator that produces a deterministic executive summary and
+per-recommendation rationales from the report data — no API key
+required. For richer prose, configure a cloud LLM:
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--llm-graph` | off | Use an LLM to resolve imports for every scanned file and union the result with the static extractor. Opt-in only. Requires the same API config as `--with-narrative`. |
-| `--llm-graph-max-calls` | `50` | Cap on LLM calls during `--llm-graph` — a cost guard. |
-
-### LLM narrative
-
-| Flag | Default | Meaning |
-|---|---|---|
-| `--with-narrative` | off | Add an LLM-generated executive summary, headline action, and per-recommendation rationales on top of the report. |
-| `--narrative-lang` | `en` | Language for the LLM narrative: `en` or `tr`. |
-| `--api-key` | `""` | LLM API key. Overrides `.blindspot.yaml`. |
+| `--narrative-lang` | `en` | Language for the narrative: `en` or `tr`. |
+| `--api-key` | `""` | Cloud LLM API key. When set, overrides the rule-based narrator. Overrides `.blindspot.yaml`. |
 | `--model` | `""` | LLM model id. Overrides config. |
-| `--provider` | `""` | LLM provider. Defaults to `anthropic`. |
+| `--provider` | `""` | LLM provider — `anthropic` (default) or `openai`. |
 
 ---
 
@@ -99,7 +99,7 @@ blindspot simulate -p alice@example.com -p bob@example.com /path/to/repo
 | `--person`, `-p` | *(required)* | Person email. Repeat the flag to simulate multiple people leaving together. |
 | `--since-days` | `180` | Analysis window in days. |
 | `--output`, `-o` | `blindspot_departure.html` | HTML report output path. Set to an empty string to skip writing a file (console output only). |
-| `--with-narrative` | off | Add an LLM-generated departure briefing with mitigation steps. |
+| `--with-narrative` | off | Add an LLM-generated departure briefing with mitigation steps. (Cloud only — `--api-key` required.) |
 | `--narrative-lang` | `en` | Language for the LLM narrative: `en` or `tr`. |
 | `--api-key` | `""` | LLM API key. |
 | `--model` | `""` | LLM model id. |
@@ -121,19 +121,21 @@ Prints the installed Blindspot version. No options.
 ## Notes
 
 - **A plain `scan` is fully offline.** The network is only touched when
-  `--with-reviews`, `--with-narrative`, or `--llm-graph` is set.
-- **Flags that need credentials:** `--with-reviews` (on a private repo
-  or a Bitbucket remote), `--with-narrative`, `--llm-graph`. All read
-  from CLI flags or `.blindspot.yaml` — never the environment.
-- **Without `--with-reviews`:** review-hygiene metrics
+  review data can be fetched (credentials present) or when an LLM
+  `--api-key` is configured. With neither, the report is still complete
+  via the rule-based narrator + the in-report upgrade hints.
+- **Flags that need credentials:** review fetch (private GitHub repo or
+  any Bitbucket repo) and cloud narrative. All read from CLI flags or
+  `.blindspot.yaml` — never the environment.
+- **Without review credentials:** review-hygiene metrics
   (rubber-stamp ratio, reviewer diversity, approval latency) and the PR
   activity mix cannot be produced. Everything else — ownership, bus
   factor, decay, departure, dependency graph, central models,
-  resilience score — still works on local git alone.
-- **Conditional report sections:** several `scan` sections only appear
-  when their flag is set (trend → `--with-trend`, author profiles →
-  `--experimental-ai-signal`, narrative → `--with-narrative`, etc.).
-  See [outputs.md](outputs.md).
+  resilience score, trend, narrative (rule-based) — still works on
+  local git alone.
+- **Conditional report sections:** author profiles appear with
+  `--experimental-ai-signal`; trend and narrative appear always. See
+  [outputs.md](outputs.md).
 
 ---
 

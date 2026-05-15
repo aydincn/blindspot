@@ -3,6 +3,48 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.0.3] — 2026-05-15 (Pre-alpha)
+
+The "scan-and-go" release. `pip install blindspot && blindspot scan /repo`
+now produces a complete report — narrative included — out of the box,
+with zero setup. Heavier features are still available, surfaced via
+contextual hints in the report itself.
+
+### New
+- **Rule-based narrator** (Tier 0) — produces a deterministic executive
+  summary, headline action, and per-recommendation rationales from
+  `ReportContext`. No API key, no network, no model. Bilingual (EN + TR).
+- **OpenAI client** (Tier 1) — `--provider openai` now works alongside
+  Anthropic. stdlib-only HTTP, no new dependency.
+- **In-report upgrade hints** — when a feature is unavailable (no cloud
+  key → rule-based; no review credentials → no PR metrics) the report
+  surfaces a small, contextual notice telling the user *exactly* how to
+  enable it. CLI `--help` is no longer where you have to look.
+
+### Changed (breaking, pre-alpha 0.x)
+- `--with-trend` removed — trend is **always on** now.
+- `--with-narrative` removed — narrative is **always on** (rule-based by
+  default; cloud LLM if `narrative.api_key` is configured).
+- `--with-reviews` is now auto-mode by default — tries when credentials
+  are available (token, gh CLI, or Bitbucket app password), silently
+  skips when not. Pass `--no-reviews` to opt out. The report explains
+  how to enable when skipped.
+- `--simulate-top-departures` default raised `3 → 6`.
+- `--llm-graph` + `--llm-graph-max-calls` removed; the static AST +
+  10 regex extractors cover supported languages well enough that the LLM
+  augmentation wasn't earning its cost.
+- `[ai]` optional dependency removed from `pyproject.toml` — was never
+  actually used; rule-based narrator and cloud clients are all stdlib.
+
+### Internal
+- `narrative.config.load_narrative_config` no longer raises when
+  `api_key` is missing — returns an empty config and the caller falls
+  back to the rule-based narrator.
+- New `generate_narrative(cfg, ctx, language)` entry point chooses
+  cloud or rule-based based on `cfg.api_key`.
+- `ReportContext.detected_remote` (`"github"` / `"bitbucket"` / `None`)
+  drives the review-section hint targeting.
+
 ## [0.0.2] — 2026-05-14 (Pre-alpha)
 
 First PyPI release.

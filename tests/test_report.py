@@ -11,6 +11,8 @@ from blindspot.report import (
 )
 from blindspot.risk_models import BusFactorEngine, DepartureSimulation, KnowledgeDecayEngine
 
+from blindspot.narrative.rule_based import RuleBasedNarrator
+
 from tests.conftest import CommitSpec
 
 
@@ -51,6 +53,67 @@ def _build_context(repo) -> ReportContext:
         decay_top=tuple(decays[:20]),
         decay_services=tuple(decay_services),
     )
+
+
+def test_rule_based_narrative_shows_upgrade_hint(make_repo):
+    repo = make_repo([CommitSpec("Alice", "alice@x.com", "src/a.py", "1\n", 5)])
+    ctx = _build_context(repo)
+    narrative = RuleBasedNarrator(language="en").summarize(ctx)
+    from dataclasses import replace
+    ctx = replace(ctx, narrative=narrative)
+    html = ReportRenderer().render(ctx)
+    assert "Want a richer, prose-style executive summary" in html
+    assert "--api-key" in html
+    assert 'class="upgrade-hint"' in html
+
+
+def test_cloud_narrative_hides_upgrade_hint(make_repo):
+    from blindspot.narrative.models import NarrativeReport
+    repo = make_repo([CommitSpec("Alice", "alice@x.com", "src/a.py", "1\n", 5)])
+    ctx = _build_context(repo)
+    # Simulate a cloud-generated narrative — model set to a real id
+    narrative = NarrativeReport(
+        executive_summary="Cloud-generated prose.",
+        headline_action="Take action.",
+        rationales={},
+        language="en",
+        model="claude-sonnet-4-6",
+    )
+    from dataclasses import replace
+    ctx = replace(ctx, narrative=narrative)
+    html = ReportRenderer().render(ctx)
+    assert "Want a richer, prose-style executive summary" not in html
+
+
+def test_review_hint_when_github_remote_detected_no_creds(make_repo):
+    repo = make_repo([CommitSpec("Alice", "alice@x.com", "src/a.py", "1\n", 5)])
+    base = _build_context(repo)
+    from dataclasses import replace
+    ctx = replace(base, reviews_enabled=False, detected_remote="github")
+    html = ReportRenderer().render(ctx)
+    assert "Review metrics unavailable" in html
+    assert "gh auth login" in html
+    assert 'class="notice-box"' in html
+
+
+def test_review_hint_when_bitbucket_remote_detected_no_creds(make_repo):
+    repo = make_repo([CommitSpec("Alice", "alice@x.com", "src/a.py", "1\n", 5)])
+    base = _build_context(repo)
+    from dataclasses import replace
+    ctx = replace(base, reviews_enabled=False, detected_remote="bitbucket")
+    html = ReportRenderer().render(ctx)
+    assert "Review metrics unavailable" in html
+    assert "bitbucket" in html.lower()
+    assert "id.atlassian.com" in html
+
+
+def test_no_review_hint_when_no_remote_detected(make_repo):
+    repo = make_repo([CommitSpec("Alice", "alice@x.com", "src/a.py", "1\n", 5)])
+    base = _build_context(repo)
+    from dataclasses import replace
+    ctx = replace(base, reviews_enabled=False, detected_remote=None)
+    html = ReportRenderer().render(ctx)
+    assert "Review metrics unavailable" not in html
 
 
 def test_renders_html_with_expected_sections(make_repo):

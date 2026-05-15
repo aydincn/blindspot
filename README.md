@@ -28,6 +28,8 @@ blindspot simulate --person alice@example.com /path/to/repo
 
 Output is a single self-contained HTML file. No server, no signup, no telemetry.
 
+A rule-based narrator ships in the package — `pip install blindspot && blindspot scan /repo` produces a full report with an executive summary out of the box. Configure a cloud LLM key (Anthropic or OpenAI) for richer prose; the report itself shows you how.
+
 ## Documentation
 
 Full end-to-end documentation lives in [docs/](docs/README.md) — the

@@ -35,6 +35,7 @@ class ReportContext:
     names: dict[str, str] = field(default_factory=dict)
 
     reviews_enabled: bool = False
+    detected_remote: str | None = None  # "github" | "bitbucket" | None
     pr_count: int = 0
     pr_truncated: bool = False
     top_rubber_stamps: tuple[FileReviewStats, ...] = ()

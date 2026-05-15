@@ -194,15 +194,20 @@ def test_config_falls_back_to_user_when_no_project(tmp_path: Path, monkeypatch: 
     assert cfg.api_key == "from-user"
 
 
-def test_config_raises_when_no_source_provides_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_config_returns_empty_when_no_source_provides_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # As of 0.0.3: missing api_key is valid — the caller (generate_narrative)
+    # falls back to the rule-based narrator. Only YAML-parse errors raise.
     monkeypatch.setattr(
         "blindspot.narrative.config.USER_CONFIG_PATH", tmp_path / "absent.yaml"
     )
     cwd_dir = tmp_path / "cwd"
     cwd_dir.mkdir()
     monkeypatch.chdir(cwd_dir)
-    with pytest.raises(NarrativeConfigError):
-        load_narrative_config(repo_path=tmp_path)
+    cfg = load_narrative_config(repo_path=tmp_path)
+    assert cfg.api_key == ""
+    assert cfg.provider == "anthropic"  # default
 
 
 def test_config_picks_cwd_over_scanned_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

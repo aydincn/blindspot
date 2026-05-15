@@ -1,10 +1,24 @@
-"""LLM-backed narrative engine."""
+"""Narrative orchestrator.
+
+Two tiers:
+- **Cloud LLM** (Anthropic / OpenAI) — used when an api_key is configured.
+  Produces fluent prose; output marked with the model id.
+- **Rule-based** — deterministic Python over `ReportContext`. Used when
+  no cloud key is available. Output marked `model="rule-based"`.
+
+The HTML report inspects `NarrativeReport.model` and shows a small
+upgrade hint when rule-based is used.
+"""
 
 import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
-from blindspot.narrative.client import NarrativeError
+from blindspot.narrative.client import (
+    NarrativeError,
+    build_client,
+)
+from blindspot.narrative.config import NarrativeConfig
 from blindspot.narrative.models import DepartureNarrative, NarrativeReport
 from blindspot.narrative.prompt import (
     build_departure_prompt,
@@ -12,6 +26,7 @@ from blindspot.narrative.prompt import (
     departure_system_prompt,
     system_prompt,
 )
+from blindspot.narrative.rule_based import RuleBasedNarrator
 
 if TYPE_CHECKING:
     from blindspot.report.context import ReportContext
@@ -20,6 +35,23 @@ if TYPE_CHECKING:
 
 class _Completer(Protocol):
     def complete(self, system: str, user: str) -> str: ...
+
+
+def generate_narrative(
+    cfg: NarrativeConfig,
+    ctx: "ReportContext",
+    language: str = "en",
+) -> NarrativeReport:
+    """Top-level narrative entry point.
+
+    If `cfg.api_key` is set, use the cloud provider (Anthropic / OpenAI)
+    and emit fluent prose. Otherwise fall back to the rule-based
+    narrator — deterministic, no network, always available.
+    """
+    client = build_client(cfg.provider, cfg.api_key, cfg.model)
+    if client is None:
+        return RuleBasedNarrator(language=language).summarize(ctx)
+    return NarrativeEngine(client=client).summarize(ctx, language=language)
 
 
 @dataclass
