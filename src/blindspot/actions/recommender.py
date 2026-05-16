@@ -31,10 +31,12 @@ class RecommendationContext:
     correction_load_authors: tuple[AuthorCorrectionLoad, ...] = ()
     correction_load_files: tuple[FileCorrectionLoad, ...] = ()
     ai_readiness: AIReadinessReport | None = None
-    # service name → highest-importance code file in that service. Used by the
-    # service-level diversification rule to add a concrete "start with X"
-    # entry point. Built in cli.py from critical_files + importance_map.
-    service_top_files: dict[str, str] = field(default_factory=dict)
+    # service name → up to 3 highest-importance code files in that service,
+    # ordered most important first. Lets the diversification rule turn a
+    # giant "1589 files" number into a concrete "start with these 3" list
+    # plus a cadence hint. Built in cli.py from critical_files +
+    # importance_map.
+    service_top_files: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 # Top-level directories that are operationally important but rarely benefit
@@ -133,16 +135,31 @@ class RecommendationEngine:
             owner_email, owner_cov = s.top_owners[0]
             owner_label = self._label(ctx, owner_email)
             priority = ActionPriority.HIGH if s.file_count >= 5 else ActionPriority.MEDIUM
-            top_file = ctx.service_top_files.get(s.service)
-            start_with = (
-                f" Start with: {top_file} (highest importance in this service)."
-                if top_file else ""
-            )
+            top_files = ctx.service_top_files.get(s.service, ())
+            if top_files:
+                if len(top_files) == 1:
+                    start_with = (
+                        f" Start with: {top_files[0]} (highest importance in this service)."
+                    )
+                else:
+                    listed = ", ".join(top_files)
+                    start_with = f" Start with these {len(top_files)} files: {listed}."
+            else:
+                start_with = ""
+            # Effort hint: large services need a cadence to be realistic.
+            if s.file_count >= 50:
+                effort_hint = " Cadence: one file per sprint to keep the load reviewable."
+            elif s.file_count >= 15:
+                effort_hint = " Cadence: aim to cover the top files this quarter."
+            else:
+                effort_hint = ""
             evidence = (
                 f"bus_factor=1, top_owner_coverage={owner_cov:.0%}, files={s.file_count}"
             )
-            if top_file:
-                evidence += f", top_file={top_file}"
+            if top_files:
+                evidence += f", top_files={top_files[0]}"
+                if len(top_files) > 1:
+                    evidence += f"+{len(top_files) - 1}"
             out.append(
                 RecommendedAction(
                     priority=priority,
@@ -152,7 +169,7 @@ class RecommendationEngine:
                         f"Service '{s.service}' has bus factor 1 across {s.file_count} files; "
                         f"{owner_label} holds {owner_cov:.0%} of effective ownership. "
                         "Pair them with at least two additional engineers and rotate code reviews "
-                        f"for this area over the next 60 days.{start_with}"
+                        f"for this area over the next 60 days.{start_with}{effort_hint}"
                     ),
                     target=s.service,
                     evidence=evidence,
@@ -335,8 +352,16 @@ class RecommendationEngine:
 
     def _ai_readiness_gap(self, ctx: RecommendationContext) -> list[RecommendedAction]:
         """Flag services that lack AI-readable operational context.
-        Priority is bumped to MEDIUM when the service also has bus factor ≤ 1
-        — there, the gap compounds with knowledge concentration."""
+
+        Critical gaps (low coverage + bus factor ≤ 1) emit individual MEDIUM
+        recommendations — there, the gap compounds with knowledge
+        concentration and deserves its own punch-list line.
+
+        Non-critical gaps are *aggregated* into a single LOW
+        recommendation so repos with many bare services don't spam the
+        table with repetitive lines. The names are listed in the
+        description and evidence.
+        """
         if ctx.ai_readiness is None:
             return []
         bus_factor_by_service = {s.service: s.bus_factor for s in ctx.services}
@@ -349,44 +374,98 @@ class RecommendationEngine:
             key=lambda c: (c.coverage_count, c.target),
         )
         out: list[RecommendedAction] = []
+        regular: list = []
+
+        def _missing(c) -> list[str]:
+            m = []
+            if not c.agent_rules:
+                m.append("agent rules (CLAUDE.md, .cursor/, copilot-instructions)")
+            if not c.specs:
+                m.append("specs/")
+            if not c.prompts:
+                m.append("prompts/")
+            if not c.architecture:
+                m.append("architecture notes / ADRs")
+            if not c.skills:
+                m.append("skills/")
+            return m
+
         for c in candidates:
             bus = bus_factor_by_service.get(c.target)
-            critical = bus is not None and bus <= 1
-            priority = ActionPriority.MEDIUM if critical else ActionPriority.LOW
-            missing = []
-            if not c.agent_rules:
-                missing.append("agent rules (CLAUDE.md, .cursor/, copilot-instructions)")
-            if not c.specs:
-                missing.append("specs/")
-            if not c.prompts:
-                missing.append("prompts/")
-            if not c.architecture:
-                missing.append("architecture notes / ADRs")
-            if not c.skills:
-                missing.append("skills/")
-            bus_note = (
-                f" Bus factor is {bus} — the gap compounds with knowledge concentration."
-                if critical else ""
-            )
-            out.append(
-                RecommendedAction(
-                    priority=priority,
-                    category=ActionCategory.KNOWLEDGE_TRANSFER,
-                    title=f"Add AI-readable operational context for '{c.target}'",
-                    description=(
-                        f"Service '{c.target}' has {c.coverage_count}/5 AI-native "
-                        f"context coverage. Missing: {', '.join(missing)}. "
-                        "Adding any of these lets new contributors (human or AI) "
-                        "load context without spelunking through code."
-                        + bus_note
-                    ),
-                    target=c.target,
-                    evidence=(
-                        f"coverage={c.coverage_count}/5, "
-                        f"bus_factor={bus if bus is not None else 'n/a'}"
-                    ),
+            if bus is not None and bus <= 1:
+                # Compound risk — keep it as its own MEDIUM line
+                missing = _missing(c)
+                out.append(
+                    RecommendedAction(
+                        priority=ActionPriority.MEDIUM,
+                        category=ActionCategory.KNOWLEDGE_TRANSFER,
+                        title=f"Add AI-readable operational context for '{c.target}'",
+                        description=(
+                            f"Service '{c.target}' has {c.coverage_count}/5 "
+                            f"AI-native context coverage. Missing: "
+                            f"{', '.join(missing)}. Bus factor is {bus} — the "
+                            "gap compounds with knowledge concentration, so "
+                            "AI-assisted onboarding can't soften an owner "
+                            "departure either."
+                        ),
+                        target=c.target,
+                        evidence=(
+                            f"coverage={c.coverage_count}/5, bus_factor={bus}"
+                        ),
+                    )
                 )
-            )
+            else:
+                regular.append(c)
+
+        # Aggregate the non-compound gaps into a single LOW line.
+        if regular:
+            if len(regular) == 1:
+                c = regular[0]
+                missing = _missing(c)
+                out.append(
+                    RecommendedAction(
+                        priority=ActionPriority.LOW,
+                        category=ActionCategory.KNOWLEDGE_TRANSFER,
+                        title=f"Add AI-readable operational context for '{c.target}'",
+                        description=(
+                            f"Service '{c.target}' has {c.coverage_count}/5 "
+                            f"AI-native context coverage. Missing: "
+                            f"{', '.join(missing)}. Adding any of these lets "
+                            "new contributors (human or AI) load context "
+                            "without spelunking through code."
+                        ),
+                        target=c.target,
+                        evidence=f"coverage={c.coverage_count}/5",
+                    )
+                )
+            else:
+                names = [c.target for c in regular]
+                preview = ", ".join(names[:5])
+                if len(names) > 5:
+                    preview += f", … (+{len(names) - 5} more)"
+                out.append(
+                    RecommendedAction(
+                        priority=ActionPriority.LOW,
+                        category=ActionCategory.KNOWLEDGE_TRANSFER,
+                        title=(
+                            f"Add AI-readable operational context across "
+                            f"{len(regular)} services"
+                        ),
+                        description=(
+                            f"{len(regular)} services carry fewer than "
+                            f"{self.ai_readiness_min_coverage}/5 AI-native "
+                            f"context categories: {preview}. Bulk-adding "
+                            "CLAUDE.md / specs / ADRs across these surfaces "
+                            "lets new contributors (human or AI) load context "
+                            "without spelunking through code."
+                        ),
+                        target=f"{len(regular)} services",
+                        evidence=(
+                            f"services={len(regular)}, "
+                            f"max_coverage={max(c.coverage_count for c in regular)}/5"
+                        ),
+                    )
+                )
         return out[: self.max_per_rule]
 
     def _codeowners(self, ctx: RecommendationContext) -> list[RecommendedAction]:

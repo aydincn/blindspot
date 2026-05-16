@@ -3,6 +3,48 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.0.5e0] — 2026-05-16 (Pre-alpha)
+
+The "boardroom-grade polish" pass. Three quality-of-life refinements
+driven by the same saha test cohort — turning surface-level numbers
+into concrete, scoped, profile-aware advice.
+
+### New
+- **Effort-aware diversification recommendations** —
+  `RecommendationContext.service_top_files` is now a tuple of up to 3
+  files (was a single string). Service-level diversification advice
+  lists those concrete files and adds a cadence hint:
+  * services with ≥ 50 files: *"Cadence: one file per sprint to keep
+    the load reviewable."*
+  * services with ≥ 15 files: *"Cadence: aim to cover the top files
+    this quarter."*
+  * smaller services: no cadence (no need).
+  Turns "1589 files would orphan" into a scoped to-do.
+- **Repo profile detection** — new `resilience/profile.py` classifies
+  the repo as one of `doc-only` / `single-maintainer` / `founder-led`
+  / `team` / `multi-org` / `unknown` from authors, services, file
+  count and the dominant author's coverage share.
+- **Profile-aware narrator framing** — the executive summary's
+  structural-note line is now wired to the profile:
+  * `single-maintainer` / `founder-led`: "concentration is structural
+    and expected".
+  * `doc-only`: "very little code surface for this analysis".
+  * `multi-org` + Fragile/Critical band: "concentration signals here
+    are real risks, not structural artefacts".
+  * `team` / `unknown` with low ownership: previous generic structural
+    note (kept as fallback).
+  EN + TR.
+- **AI-readiness gap aggregation** — `_ai_readiness_gap` no longer
+  spams the recommendation table with one LOW line per bare service.
+  Compound-risk gaps (low coverage + bus factor ≤ 1) remain
+  individual MEDIUM lines; everything else collapses into a single
+  LOW line ("Add AI-readable operational context across N services")
+  with the service names listed in the description.
+
+### Tests
+- 426 passing (+12 since 0.0.5d): 3 effort-aware rec tests, 6 profile
+  detection tests, 2 AI-readiness aggregation tests, 1 housekeeping.
+
 ## [0.0.5d0] — 2026-05-16 (Pre-alpha)
 
 The "CTO-level credibility" pass. Three fixes driven by saha testleri

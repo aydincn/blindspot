@@ -34,6 +34,10 @@ _LABELS: dict[str, dict[str, str]] = {
         "verdict_score": "Resilience is **{band}** ({score}/100).",
         "verdict_weakest": "Weakest dimension: {dim}.",
         "verdict_structural_note": "This is a structural property — typical for founder-led or single-maintainer projects — not a verdict on project health.",
+        "verdict_profile_single_maintainer": "Repo profile: single-maintainer. Concentration is structural and expected.",
+        "verdict_profile_founder_led": "Repo profile: founder-led. One contributor dominates by design; concentration is structural.",
+        "verdict_profile_doc_only": "Repo profile: doc-only — very little code surface for this analysis. Treat results with caution.",
+        "verdict_profile_multi_org": "Repo profile: multi-org / enterprise. Concentration signals here are real risks, not structural artefacts.",
         "para_counts_lead": "Risk inventory:",
         "para_counts_services": "{n} service(s) rest on a single contributor",
         "para_counts_decay": "{n} file(s) are decaying critically",
@@ -69,6 +73,10 @@ _LABELS: dict[str, dict[str, str]] = {
         "verdict_score": "Resilience **{band}** ({score}/100).",
         "verdict_weakest": "En zayıf boyut: {dim}.",
         "verdict_structural_note": "Bu yapısal bir özellik — founder-led veya tek-maintainer projeler için tipik — proje sağlığı hakkında bir yargı değil.",
+        "verdict_profile_single_maintainer": "Repo profili: tek-maintainer. Yoğunlaşma yapısal ve beklenir.",
+        "verdict_profile_founder_led": "Repo profili: founder-led. Bir katkı sağlayan tasarım gereği dominant; yoğunlaşma yapısal.",
+        "verdict_profile_doc_only": "Repo profili: sadece-doküman — analiz için çok az kod yüzeyi var. Sonuçları temkinle değerlendir.",
+        "verdict_profile_multi_org": "Repo profili: çok-organizasyon / kurumsal. Yoğunlaşma sinyalleri gerçek risk, yapısal bir özellik değil.",
         "para_counts_lead": "Risk envanteri:",
         "para_counts_services": "{n} servis tek kişiye bağlı",
         "para_counts_decay": "{n} dosyada kritik bilgi erozyonu",
@@ -188,12 +196,31 @@ class RuleBasedNarrator:
             weakest = self._weakest_dimension(ctx)
             if weakest:
                 verdict += " " + _label(L, "verdict_weakest").format(dim=weakest)
-            # Descriptive footnote when the band reads "Fragile" or "Critical"
-            # and the weakest dimension is ownership. Stops a long-lived
-            # single-maintainer OSS being mis-read as "the project is on
-            # fire". Surveillance-rule-aligned: framing, not verdict.
+            # Profile-aware footnote. Single-maintainer / founder-led /
+            # doc-only / multi-org repos each get their own framing so a
+            # "Critical" band is read with the right context:
+            #   * single-maintainer: structural concentration is expected
+            #   * founder-led: dominance is by design
+            #   * doc-only: too little code to draw strong conclusions
+            #   * multi-org: concentration HERE is a real risk, not artefact
+            # Falls back to the older structural note when no profile or
+            # the team profile (which behaves as the "default" framing).
             band = ctx.resilience.band
-            if band in ("Fragile", "Critical") and ctx.resilience.ownership is not None and ctx.resilience.ownership < 40:
+            low_ownership = (
+                ctx.resilience.ownership is not None
+                and ctx.resilience.ownership < 40
+            )
+            profile = ctx.repo_profile
+            if profile == "single-maintainer":
+                verdict += " " + _label(L, "verdict_profile_single_maintainer")
+            elif profile == "founder-led":
+                verdict += " " + _label(L, "verdict_profile_founder_led")
+            elif profile == "doc-only":
+                verdict += " " + _label(L, "verdict_profile_doc_only")
+            elif profile == "multi-org" and band in ("Fragile", "Critical") and low_ownership:
+                verdict += " " + _label(L, "verdict_profile_multi_org")
+            elif band in ("Fragile", "Critical") and low_ownership:
+                # Fallback for "team" / "unknown" — preserve old structural note.
                 verdict += " " + _label(L, "verdict_structural_note")
             paragraphs.append(verdict)
 

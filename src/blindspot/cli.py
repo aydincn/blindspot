@@ -59,6 +59,7 @@ from blindspot.report import (
     compute_remaining_gaps,
 )
 from blindspot.resilience import ResilienceScoreEngine
+from blindspot.resilience.profile import detect_profile
 from blindspot.review_graph import ReviewGraph, ReviewGraphBuilder
 from blindspot.risk_models import (
     AIReadinessEngine,
@@ -594,6 +595,23 @@ def scan(
     correction_report = CorrectionLoadEngine().compute(commits)
     ai_readiness = AIReadinessEngine().detect(files)
 
+    # Top author by aggregated ownership coverage — used by the profile
+    # detector to tell "founder-led" from "team-based".
+    _author_total: dict[str, float] = {}
+    for s in ownership.scores:
+        _author_total[s.author_email] = _author_total.get(s.author_email, 0.0) + s.coverage
+    _total_coverage = sum(_author_total.values()) or 1.0
+    _top_author_coverage = (
+        max(_author_total.values()) / _total_coverage if _author_total else None
+    )
+    repo_profile = detect_profile(
+        commit_count=len(commits),
+        author_count=len(authors),
+        files=files,
+        services_count=len(services),
+        top_author_coverage=_top_author_coverage,
+    )
+
     resilience = ResilienceScoreEngine().compute(
         services,
         decays,
@@ -764,21 +782,23 @@ def scan(
         correction_load_authors=correction_report.authors,
         correction_load_files=correction_report.files,
         ai_readiness=ai_readiness,
+        repo_profile=repo_profile,
     )
 
-    # Per-service: highest-importance code file (or fallback to highest-
-    # coverage critical file). Lets the diversification recommendation say
-    # "start with X" instead of just naming the whole service.
-    service_top_files: dict[str, str] = {}
+    # Per-service: up to 3 highest-importance code files (fallback: highest-
+    # coverage critical file). Lets the diversification recommendation turn
+    # a "1589 files" number into a concrete starter list.
+    _service_buckets: dict[str, list[str]] = {}
     for cf in critical_files:
         svc = service_of(cf.file)
-        if svc not in service_top_files:
-            service_top_files[svc] = cf.file
-            continue
-        # Prefer the file with the higher importance weight.
-        cur = service_top_files[svc]
-        if importance_map.get(cf.file, 0.0) > importance_map.get(cur, 0.0):
-            service_top_files[svc] = cf.file
+        _service_buckets.setdefault(svc, []).append(cf.file)
+    service_top_files: dict[str, tuple[str, ...]] = {}
+    for svc, files in _service_buckets.items():
+        ranked = sorted(
+            files,
+            key=lambda f: -importance_map.get(f, 0.0),
+        )
+        service_top_files[svc] = tuple(ranked[:3])
 
     rec_ctx = RecommendationContext(
         services=tuple(services),

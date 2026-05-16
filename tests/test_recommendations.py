@@ -347,12 +347,12 @@ def test_service_bus_factor_includes_start_with_when_top_file_provided():
     svc = _service("payment", 8, "alice@x.com", 0.85)
     ctx = RecommendationContext(
         services=(svc,),
-        service_top_files={"payment": "src/payment/checkout.py"},
+        service_top_files={"payment": ("src/payment/checkout.py",)},
     )
     actions = RecommendationEngine().recommend(ctx)
     a = next(a for a in actions if a.category == ActionCategory.OWNERSHIP_DIVERSIFICATION)
     assert "Start with: src/payment/checkout.py" in a.description
-    assert "top_file=src/payment/checkout.py" in a.evidence
+    assert "top_files=src/payment/checkout.py" in a.evidence
 
 
 def test_service_bus_factor_omits_start_with_when_no_top_file():
@@ -361,7 +361,7 @@ def test_service_bus_factor_omits_start_with_when_no_top_file():
     actions = RecommendationEngine().recommend(ctx)
     a = next(a for a in actions if a.category == ActionCategory.OWNERSHIP_DIVERSIFICATION)
     assert "Start with:" not in a.description
-    assert "top_file=" not in a.evidence
+    assert "top_files=" not in a.evidence
 
 
 # ---------------------------------------------------------------------------
@@ -419,3 +419,99 @@ def test_tiny_services_skip_diversification_rule():
     assert not any(
         a.category == ActionCategory.OWNERSHIP_DIVERSIFICATION for a in actions
     )
+
+
+def test_service_bus_factor_lists_top_3_files_and_adds_cadence_for_large_service():
+    """0.0.5e — turn '1589 files' into a concrete list + cadence."""
+    svc = _service("payment", 60, "alice@x.com", 0.85)
+    ctx = RecommendationContext(
+        services=(svc,),
+        service_top_files={"payment": (
+            "src/payment/checkout.py",
+            "src/payment/cart.py",
+            "src/payment/refund.py",
+        )},
+    )
+    actions = RecommendationEngine().recommend(ctx)
+    a = next(a for a in actions if a.category == ActionCategory.OWNERSHIP_DIVERSIFICATION)
+    assert "Start with these 3 files" in a.description
+    assert "src/payment/checkout.py" in a.description
+    assert "src/payment/refund.py" in a.description
+    # Large service → sprint cadence hint
+    assert "one file per sprint" in a.description.lower()
+
+
+def test_service_bus_factor_quarterly_cadence_for_medium_service():
+    svc = _service("api", 20, "alice@x.com", 0.85)
+    ctx = RecommendationContext(
+        services=(svc,),
+        service_top_files={"api": ("src/api/auth.py", "src/api/users.py")},
+    )
+    actions = RecommendationEngine().recommend(ctx)
+    a = next(a for a in actions if a.category == ActionCategory.OWNERSHIP_DIVERSIFICATION)
+    assert "this quarter" in a.description.lower()
+
+
+def test_service_bus_factor_no_cadence_for_small_service():
+    svc = _service("util", 5, "alice@x.com", 0.85)
+    ctx = RecommendationContext(
+        services=(svc,),
+        service_top_files={"util": ("src/util/helpers.py",)},
+    )
+    actions = RecommendationEngine().recommend(ctx)
+    a = next(a for a in actions if a.category == ActionCategory.OWNERSHIP_DIVERSIFICATION)
+    assert "sprint" not in a.description.lower()
+    assert "quarter" not in a.description.lower()
+
+
+def test_ai_readiness_gap_aggregates_multiple_low_priority_services():
+    """0.0.5e — many bare services collapse into one LOW line."""
+    report = _readiness_report(
+        _readiness_coverage("api"),
+        _readiness_coverage("auth"),
+        _readiness_coverage("billing"),
+        _readiness_coverage("orders"),
+    )
+    ctx = RecommendationContext(ai_readiness=report)
+    actions = RecommendationEngine().recommend(ctx)
+    ai_actions = [a for a in actions if "AI-readable" in a.title]
+    # Should aggregate into a single LOW action, not 4 separate ones.
+    assert len(ai_actions) == 1
+    a = ai_actions[0]
+    assert a.priority == ActionPriority.LOW
+    assert "across 4 services" in a.title
+    assert "api" in a.description
+    assert "auth" in a.description
+    assert "billing" in a.description
+    assert "orders" in a.description
+
+
+def test_ai_readiness_gap_critical_services_kept_individual():
+    """Critical compound risk (bus factor ≤ 1 + bare context) stays
+    individual even when other services are aggregated."""
+    report = _readiness_report(
+        _readiness_coverage("api"),     # plain LOW
+        _readiness_coverage("payment"),  # compound (will get critical svc)
+    )
+    payment_svc = _service("payment", 8, "alice@x.com", 0.85)  # bus_factor=1
+    api_svc = _service("api", 8, "alice@x.com", 0.5)  # bus_factor will be > 1
+    # _service helper always sets bus_factor=1, but we only check the
+    # bus_factor==1 path for payment by using bus_factor_by_service
+    # lookup. Make api look healthy by giving it 50% coverage so it falls
+    # below the rule's bf <= 1 path.
+    # Simpler: use only "payment" as critical, no api in services map.
+    ctx = RecommendationContext(
+        services=(payment_svc,),
+        ai_readiness=report,
+    )
+    actions = RecommendationEngine().recommend(ctx)
+    ai_actions = [a for a in actions if "AI-readable" in a.title]
+    # payment → individual MEDIUM (compound)
+    # api → aggregated LOW (only 1, so still a single line by name)
+    assert len(ai_actions) == 2
+    medium = [a for a in ai_actions if a.priority == ActionPriority.MEDIUM]
+    low = [a for a in ai_actions if a.priority == ActionPriority.LOW]
+    assert len(medium) == 1
+    assert "payment" in medium[0].target
+    assert len(low) == 1
+    assert "api" in low[0].target

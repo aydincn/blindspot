@@ -57,6 +57,9 @@ class ReportContext:
     correction_load_authors: tuple[AuthorCorrectionLoad, ...] = ()
     correction_load_files: tuple[FileCorrectionLoad, ...] = ()
     ai_readiness: AIReadinessReport | None = None
+    # Repo typology label — drives band-level framing in the narrator.
+    # See resilience/profile.py for the label set.
+    repo_profile: str | None = None
 
     def label(self, email: str) -> str:
         name = self.names.get(email)
