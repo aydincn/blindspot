@@ -87,6 +87,9 @@ class RecommendationEngine:
     correction_load_high_threshold: float = 0.35
     ai_readiness_min_coverage: int = 2
     support_services: frozenset[str] = SUPPORT_SERVICES
+    # Services with fewer files than this don't generate a diversification
+    # recommendation — "pair on bus factor 1 across 1 files" is meaningless.
+    min_service_files_for_action: int = 3
 
     def _passes_importance(self, ctx: RecommendationContext, file: str) -> bool:
         """Filter out files structurally unimportant to the codebase.
@@ -125,6 +128,8 @@ class RecommendationEngine:
                 continue
             if s.service in self.support_services:
                 continue  # CI/docs/tests/scripts — single-owner by design
+            if s.file_count < self.min_service_files_for_action:
+                continue  # "Diversify across 1 file" is meaningless
             owner_email, owner_cov = s.top_owners[0]
             owner_label = self._label(ctx, owner_email)
             priority = ActionPriority.HIGH if s.file_count >= 5 else ActionPriority.MEDIUM

@@ -14,7 +14,7 @@ from blindspot.codeowners import (
     find_codeowners_file,
     parse_codeowners,
 )
-from blindspot.collector import GitCollector
+from blindspot.collector import GitCollector, is_bot_author
 from blindspot.collector.bitbucket import (
     BitbucketAuthError,
     BitbucketClient,
@@ -226,6 +226,13 @@ def scan(
         '--simulate-departures "alice@x.com,bob@x.com,carol@x.com" — '
         "renders one combined card on top of the top-N scenarios.",
     ),
+    include_bots: bool = typer.Option(
+        False, "--include-bots",
+        help="Include automated authors (release-bots, dependabot, "
+        "github-actions, etc.) in ownership and recommendations. "
+        "Off by default — automated commits inflate apparent contribution "
+        "and produce nonsense advice like 'pair Release Bot on CHANGELOG'.",
+    ),
     narrative_lang: str = typer.Option(
         "en",
         "--narrative-lang",
@@ -244,6 +251,19 @@ def scan(
     """Scan a repository and generate a knowledge risk report."""
     collector = GitCollector(path, since_days=since_days, include_merges=include_merges)
     commits = list(collector.collect())
+
+    if not include_bots:
+        before = len(commits)
+        commits = [
+            c for c in commits
+            if not is_bot_author(c.author_email, c.author_name)
+        ]
+        filtered = before - len(commits)
+        if filtered:
+            console.print(
+                f"  Filtered {filtered} commit{'s' if filtered != 1 else ''} "
+                f"from automated authors (use --include-bots to keep them)."
+            )
 
     authors = {c.author_email for c in commits}
     files: set[str] = set()

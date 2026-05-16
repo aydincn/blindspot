@@ -52,8 +52,10 @@ def test_recommends_diversification_for_single_owner_service():
 
 
 def test_small_service_gets_medium_priority():
+    # 3 files: above the min_service_files_for_action threshold but below
+    # the HIGH priority threshold (5).
     ctx = RecommendationContext(
-        services=(_service("util", 2, "alice@x.com", 0.9),),
+        services=(_service("util", 3, "alice@x.com", 0.9),),
     )
     actions = RecommendationEngine().recommend(ctx)
     a = next(a for a in actions if a.category == ActionCategory.OWNERSHIP_DIVERSIFICATION)
@@ -404,3 +406,16 @@ def test_support_services_skip_ai_readiness_gap():
     ctx = RecommendationContext(ai_readiness=report)
     actions = RecommendationEngine().recommend(ctx)
     assert not any("AI-readable" in a.title for a in actions)
+
+
+def test_tiny_services_skip_diversification_rule():
+    # 1- and 2-file services don't warrant a "diversify ownership" action.
+    services = (
+        _service("solo", 1, "alice@x.com", 0.95),
+        _service("tiny", 2, "alice@x.com", 0.95),
+    )
+    ctx = RecommendationContext(services=services)
+    actions = RecommendationEngine().recommend(ctx)
+    assert not any(
+        a.category == ActionCategory.OWNERSHIP_DIVERSIFICATION for a in actions
+    )

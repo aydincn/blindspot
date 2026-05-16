@@ -283,11 +283,15 @@ class RuleBasedNarrator:
     # Picker helpers
 
     def _worst_single_owner_service(self, ctx) -> tuple[str, str, int] | None:
-        # Service bus factor 1 with the most files, ignoring "(config)" / "(root)" / "(other)"
+        # Service bus factor 1 with the most files, skipping support surfaces
+        # (CI workflows, docs, tests, scripts, examples, hack, vendor) and
+        # tiny services with too few files for "diversify" to make sense.
+        from blindspot.actions.recommender import SUPPORT_SERVICES
         candidates = [
             s for s in ctx.services
             if s.bus_factor == 1 and s.top_owners
-            and not (s.service.startswith("(") and s.service.endswith(")"))
+            and s.service not in SUPPORT_SERVICES
+            and s.file_count >= 3
         ]
         if not candidates:
             return None
@@ -333,12 +337,14 @@ class RuleBasedNarrator:
     # Risk counts (for executive summary paragraph 2)
 
     def _risk_counts(self, ctx) -> list[str]:
+        from blindspot.actions.recommender import SUPPORT_SERVICES
         L = self.language
         out: list[str] = []
         single_owner = sum(
             1 for s in ctx.services
             if s.bus_factor == 1
-            and not (s.service.startswith("(") and s.service.endswith(")"))
+            and s.service not in SUPPORT_SERVICES
+            and s.file_count >= 3
         )
         if single_owner:
             out.append(_label(L, "para_counts_services").format(n=single_owner))
