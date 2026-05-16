@@ -7,11 +7,15 @@ from blindspot.actions.models import (
     FragilityPattern,
     RecommendedAction,
 )
-from blindspot.ai_signal.models import AuthorProfile, AuthorProfileType
 from blindspot.codeowners import CodeOwnersReport
 from blindspot.diff_analysis.classifier import classify_file
 from blindspot.review_graph.engine import FileReviewStats
+from blindspot.risk_models.ai_readiness import AIReadinessReport
 from blindspot.risk_models.bus_factor import FileBusFactor, ServiceBusFactor
+from blindspot.risk_models.correction_load import (
+    AuthorCorrectionLoad,
+    FileCorrectionLoad,
+)
 from blindspot.risk_models.knowledge_decay import FileDecay
 
 
@@ -21,10 +25,16 @@ class RecommendationContext:
     critical_files: tuple[FileBusFactor, ...] = ()
     decays: tuple[FileDecay, ...] = ()
     review_stats: dict[str, FileReviewStats] = field(default_factory=dict)
-    author_profiles: dict[str, AuthorProfile] = field(default_factory=dict)
     ownership_names: dict[str, str] = field(default_factory=dict)
     codeowners_report: CodeOwnersReport | None = None
     importance_map: dict[str, float] = field(default_factory=dict)
+    correction_load_authors: tuple[AuthorCorrectionLoad, ...] = ()
+    correction_load_files: tuple[FileCorrectionLoad, ...] = ()
+    ai_readiness: AIReadinessReport | None = None
+    # service name → highest-importance code file in that service. Used by the
+    # service-level diversification rule to add a concrete "start with X"
+    # entry point. Built in cli.py from critical_files + importance_map.
+    service_top_files: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -39,6 +49,8 @@ class RecommendationEngine:
     min_approvals_for_latency: int = 3
     max_per_rule: int = 5
     importance_threshold: float = 0.005
+    correction_load_high_threshold: float = 0.35
+    ai_readiness_min_coverage: int = 2
 
     def _passes_importance(self, ctx: RecommendationContext, file: str) -> bool:
         """Filter out files structurally unimportant to the codebase.
@@ -58,7 +70,8 @@ class RecommendationEngine:
         actions.extend(self._rubber_stamp(ctx))
         actions.extend(self._reviewer_diversity(ctx))
         actions.extend(self._fast_approval(ctx))
-        actions.extend(self._fake_velocity(ctx))
+        actions.extend(self._correction_load(ctx))
+        actions.extend(self._ai_readiness_gap(ctx))
         actions.extend(self._codeowners(ctx))
         actions.sort(key=lambda a: (PRIORITY_ORDER[a.priority], a.category.value, a.target))
         return actions
@@ -77,6 +90,16 @@ class RecommendationEngine:
             owner_email, owner_cov = s.top_owners[0]
             owner_label = self._label(ctx, owner_email)
             priority = ActionPriority.HIGH if s.file_count >= 5 else ActionPriority.MEDIUM
+            top_file = ctx.service_top_files.get(s.service)
+            start_with = (
+                f" Start with: {top_file} (highest importance in this service)."
+                if top_file else ""
+            )
+            evidence = (
+                f"bus_factor=1, top_owner_coverage={owner_cov:.0%}, files={s.file_count}"
+            )
+            if top_file:
+                evidence += f", top_file={top_file}"
             out.append(
                 RecommendedAction(
                     priority=priority,
@@ -86,12 +109,10 @@ class RecommendationEngine:
                         f"Service '{s.service}' has bus factor 1 across {s.file_count} files; "
                         f"{owner_label} holds {owner_cov:.0%} of effective ownership. "
                         "Pair them with at least two additional engineers and rotate code reviews "
-                        "for this area over the next 60 days."
+                        f"for this area over the next 60 days.{start_with}"
                     ),
                     target=s.service,
-                    evidence=(
-                        f"bus_factor=1, top_owner_coverage={owner_cov:.0%}, files={s.file_count}"
-                    ),
+                    evidence=evidence,
                     pattern=FragilityPattern.SINGLE_OWNER_CONCENTRATION,
                 )
             )
@@ -230,36 +251,96 @@ class RecommendationEngine:
             )
         return out[: self.max_per_rule]
 
-    def _fake_velocity(self, ctx: RecommendationContext) -> list[RecommendedAction]:
+    def _correction_load(self, ctx: RecommendationContext) -> list[RecommendedAction]:
+        """Flag work surfaces where the correction-to-feature ratio suggests
+        fragile velocity. We target files (work surface), not people."""
         out: list[RecommendedAction] = []
-        for profile in ctx.author_profiles.values():
-            if profile.profile_type != AuthorProfileType.FAKE_VELOCITY:
-                continue
-            label = self._label(ctx, profile.author_email)
-            quality_pct = (
-                f"{profile.quality_signal.risk_score:.0%}" if profile.quality_signal else "n/a"
+        candidates = sorted(
+            (
+                f for f in ctx.correction_load_files
+                if f.correction_ratio >= self.correction_load_high_threshold
+                and classify_file(f.file) == "code"
+                and self._passes_importance(ctx, f.file)
+            ),
+            key=lambda f: -f.correction_ratio,
+        )
+        for f in candidates:
+            critical = f.risk_level == "critical"
+            priority = ActionPriority.MEDIUM if not critical else ActionPriority.HIGH
+            out.append(
+                RecommendedAction(
+                    priority=priority,
+                    category=ActionCategory.QUALITY_GUARDRAIL,
+                    title=f"Stabilize delivery on {f.file}",
+                    description=(
+                        f"{f.correction_ratio:.0%} of recent commits to this file are "
+                        f"follow-up fixes or reverts ({f.fix_commits + f.revert_commits} "
+                        f"of {f.total_commits}). Consider tightening review depth, adding "
+                        "regression tests, or pairing on the next non-trivial change to "
+                        "this surface."
+                    ),
+                    target=f.file,
+                    evidence=(
+                        f"correction_ratio={f.correction_ratio:.0%}, "
+                        f"fixes={f.fix_commits}, reverts={f.revert_commits}, "
+                        f"total={f.total_commits}"
+                    ),
+                    pattern=FragilityPattern.FRAGILE_VELOCITY,
+                )
             )
-            ai_score = (
-                f"{profile.ai_signal.score:.2f}" if profile.ai_signal else "n/a"
+        return out[: self.max_per_rule]
+
+    def _ai_readiness_gap(self, ctx: RecommendationContext) -> list[RecommendedAction]:
+        """Flag services that lack AI-readable operational context.
+        Priority is bumped to MEDIUM when the service also has bus factor ≤ 1
+        — there, the gap compounds with knowledge concentration."""
+        if ctx.ai_readiness is None:
+            return []
+        bus_factor_by_service = {s.service: s.bus_factor for s in ctx.services}
+        candidates = sorted(
+            (
+                c for c in ctx.ai_readiness.services
+                if c.coverage_count < self.ai_readiness_min_coverage
+            ),
+            key=lambda c: (c.coverage_count, c.target),
+        )
+        out: list[RecommendedAction] = []
+        for c in candidates:
+            bus = bus_factor_by_service.get(c.target)
+            critical = bus is not None and bus <= 1
+            priority = ActionPriority.MEDIUM if critical else ActionPriority.LOW
+            missing = []
+            if not c.agent_rules:
+                missing.append("agent rules (CLAUDE.md, .cursor/, copilot-instructions)")
+            if not c.specs:
+                missing.append("specs/")
+            if not c.prompts:
+                missing.append("prompts/")
+            if not c.architecture:
+                missing.append("architecture notes / ADRs")
+            if not c.skills:
+                missing.append("skills/")
+            bus_note = (
+                f" Bus factor is {bus} — the gap compounds with knowledge concentration."
+                if critical else ""
             )
             out.append(
                 RecommendedAction(
-                    priority=ActionPriority.HIGH,
-                    category=ActionCategory.QUALITY_GUARDRAIL,
-                    title=f"Deep review of recent work by {label}",
+                    priority=priority,
+                    category=ActionCategory.KNOWLEDGE_TRANSFER,
+                    title=f"Add AI-readable operational context for '{c.target}'",
                     description=(
-                        f"Recent activity shows AI amplification signals "
-                        f"(AI score {ai_score}) together with elevated quality risk "
-                        f"({quality_pct}). Schedule a dedicated review of their last 90 days of "
-                        "changes, with focus on architectural correctness and test coverage. "
-                        "Treat this as a verification step, not a punishment."
+                        f"Service '{c.target}' has {c.coverage_count}/5 AI-native "
+                        f"context coverage. Missing: {', '.join(missing)}. "
+                        "Adding any of these lets new contributors (human or AI) "
+                        "load context without spelunking through code."
+                        + bus_note
                     ),
-                    target=profile.author_email,
+                    target=c.target,
                     evidence=(
-                        f"ai_score={ai_score}, quality_risk={quality_pct}, "
-                        f"profile={profile.profile_type.value}"
+                        f"coverage={c.coverage_count}/5, "
+                        f"bus_factor={bus if bus is not None else 'n/a'}"
                     ),
-                    pattern=FragilityPattern.VELOCITY_WITHOUT_REVIEW,
                 )
             )
         return out[: self.max_per_rule]

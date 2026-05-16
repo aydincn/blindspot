@@ -46,74 +46,93 @@ The same severity vocabulary is used everywhere, so learn it once.
 
 ## The scan report
 
-Sections appear in this order. Several are conditional on flags — those
-are marked.
+Starting in 0.0.5a, the report is organised under four group headers so
+you can scan it top-to-bottom in order of CTO-relevance: **TL;DR**,
+**People & Ownership**, **Knowledge State**, **Process Quality**, with
+an optional collapsible **Architecture details** block at the bottom.
 
-### Executive summary *(only with `--with-narrative`)*
-An LLM-written headline action plus a 2–3 paragraph summary, with
-per-recommendation rationales spliced into the recommendations table.
-A draft to discuss with the team, not a directive. Feeds: the
+Sections appear in this order. Several are conditional on flags or
+data availability — those are marked.
+
+### (Top) Executive summary *(narrative engine, always rendered)*
+An LLM-written or rule-based headline action plus a 2–3 paragraph
+summary, with per-recommendation rationales spliced into the
+recommendations table below. A draft to discuss with the team, not a
+directive. The risk-inventory paragraph names counts for: services on a
+single contributor, files in critical decay, files that would orphan in
+the worst departure scenario, rubber-stamp files, high-correction-load
+files, and services lacking AI-readable operational context. Feeds: the
 [narrative engine](algorithms.md), which reads the same `ReportContext`
 everything else is built from.
 
-### Engineering Resilience Score
-The headline 0–100 number, its band, and the four sub-scores
-(ownership / decay / review / activity). Sub-scores with no data show
-"no data" and are excluded from the average — they are not counted as
-zero. **Read it as:** the one number to track over time; the
-sub-scores tell you *which* dimension is dragging. Feeds:
-[resilience score](algorithms.md#13-resilience-score).
+### TL;DR group
 
-### Departure scenarios *(only when `--simulate-top-departures` > 0)*
-A card per top-N contributor: files affected, files that would become
-orphans, average coverage loss, and the most-affected services. **Read
-it as:** the concrete cost of losing each of your biggest knowledge
-holders. Feeds: [departure simulation](algorithms.md#4-departure-simulation).
+#### Engineering Resilience Score
+The headline 0–100 number, its band (Strong / Moderate / Fragile /
+Critical), a letter grade (A–F) badge next to the overall number, and
+the three sub-scores (ownership / decay / review) each with their own
+letter grade. Sub-scores with no data show "no data" and are excluded
+from the average. **Read it as:** the one number to track over time;
+the sub-grades tell you *which* dimension is dragging. Feeds:
+[resilience score](algorithms.md#12-resilience-score).
 
-### Central models — structural types other code is bound to *(needs the dependency graph; Python files only)*
-Files that define data-model classes (`@dataclass`, pydantic
-`BaseModel`, attrs, msgspec `Struct`, `TypedDict`, …) ranked by how many
-other files import them. **Read it as:** breaking changes to a
-high-dependents model ripple widely; single-owner concentration on one
-of these is a louder warning than on ordinary code. Feeds:
-[language extractors](algorithms.md#6-language-extractors) +
-[module aggregation](algorithms.md#8-module-aggregation).
+#### Recommended actions
+The prioritised action list — priority, category, title, description,
+target, evidence, and a fragility-pattern badge where one applies
+(`review-without-scrutiny`, `single-owner-concentration`,
+`fragile-velocity`). **Read it as:** the punch list; sorted so the top
+of the table is where to start. Feeds:
+[recommendation engine](algorithms.md#13-recommendation-engine).
 
-### Structural backbone — top central files *(needs the dependency graph)*
-The top files by PageRank importance, with dependents count and top
-owner. **Read it as:** these are the files everything else
-(transitively) depends on — weak ownership or decay here matters most.
-Feeds: [PageRank importance](algorithms.md#7-pagerank-importance).
-
-### Module dependency map *(needs the dependency graph)*
-A Mermaid diagram of the repo's architecture at the module level —
-top-K modules, inter-module edges weighted by dependency count. **Read
-it as:** the shape of the system; thick edges are tight coupling.
-Feeds: [module aggregation](algorithms.md#8-module-aggregation).
-
-### Resilience trend *(only with `--with-trend`)*
+#### Resilience trend *(only when there is enough history)*
 The resilience score recomputed at 90/60/30/0 days ago, plus the delta.
 Only ownership + decay sub-scores are computed historically. **Read it
 as:** is the repo getting more or less resilient? Feeds:
 [trend engine](algorithms.md#16-trend-engine).
 
-### Activity summary
-Headline counts for the window: commits, unique authors, files touched,
-lines added/deleted. Context, not risk. Feeds: the git collector.
+### People & Ownership group
 
-### Service risk map
+#### Service risk map
 Bus factor per service (top-level directory): file count, bus factor,
 risk level, top owners. **Read it as:** which whole areas of the
 codebase rest on too few people. Feeds:
 [bus factor](algorithms.md#2-bus-factor).
 
-### Files with single ownership
+#### Files with single ownership
 The `critical` (bus factor 1) files, filtered to real code and — when
 the dependency graph ran — to files above the importance threshold.
 **Read it as:** the specific single-points-of-failure worth acting on.
 Feeds: [bus factor](algorithms.md#2-bus-factor).
 
-### Review lineage *(only with `--with-reviews`)*
+#### Departure scenarios *(only when `--simulate-top-departures` > 0)*
+A card per top-N contributor (default 3): files affected, files that
+would become orphans, average coverage loss, and the most-affected
+services. **Read it as:** the concrete cost of losing each of your
+biggest knowledge holders. Feeds:
+[departure simulation](algorithms.md#4-departure-simulation).
+
+### Knowledge State group
+
+#### Knowledge decay — top concerns
+The files with the highest decay score: top owner, days since they last
+touched it, lines changed by others since, and the 30/60/90-day
+projection. **Read it as:** files whose knowledge is going stale on a
+predictable trajectory. Feeds:
+[knowledge decay](algorithms.md#3-knowledge-decay).
+
+#### AI-native operational context
+Per-service coverage matrix of AI-readable artifacts: agent rules,
+specs, prompts, architecture decisions, skills. Boolean per category;
+coverage percentage is the share of categories present. **Read it as:**
+how much organizational memory the codebase carries for new humans *and*
+AI agents to load. Services below 2/5 coverage emit a
+`KNOWLEDGE_TRANSFER` recommendation (priority bumped to MEDIUM when the
+service's bus factor is also ≤ 1). Feeds:
+[AI readiness](algorithms.md#11-ai-readiness).
+
+### Process Quality group
+
+#### Review lineage *(only with review credentials)*
 Two sub-tables:
 - **Files with highest rubber-stamp ratio** — where approvals land
   without a substantive comment.
@@ -123,46 +142,37 @@ Two sub-tables:
 **Read it as:** where "code review" is happening on paper but not in
 substance. Feeds: [review graph](algorithms.md#9-review-graph).
 
-### CODEOWNERS validation *(only with `--check-codeowners` and a `CODEOWNERS` file)*
-Counts of aligned / mismatch / stale / orphan / team-only files, then
-sub-tables for:
-- **Mismatches** — declared owner is not the actual top contributor.
-- **Stale entries** — declared owner hasn't touched the file recently.
-- **Orphans** — files with no CODEOWNERS rule.
+#### Correction load
+Top files by share of recent commits that are follow-up fixes or
+reverts. **Read it as:** work surfaces where shipping pace is being
+paid for in stability — fragile velocity. The table targets the file,
+not the contributor; a high ratio (≥ 35%) emits a `FRAGILE_VELOCITY`
+recommendation. Feeds: [correction load](algorithms.md#10-correction-load).
 
-**Read it as:** where your declared ownership has drifted from reality.
-Feeds: [CODEOWNERS validation](algorithms.md#17-codeowners-validation).
+### Architecture details *(collapsible, default closed)*
 
-### Recommended actions
-The prioritised action list — priority, category, title, description,
-target, evidence, and a fragility-pattern badge where one applies
-(`review-without-scrutiny`, `single-owner-concentration`,
-`velocity-without-review`). **Read it as:** the punch list; sorted so
-the top of the table is where to start. Feeds:
-[recommendation engine](algorithms.md#14-recommendation-engine).
+#### Module dependency map *(needs the dependency graph)*
+A Mermaid diagram of the repo's architecture at the module level —
+top-K modules, inter-module edges weighted by dependency count. **Read
+it as:** the shape of the system; thick edges are tight coupling.
+Feeds: [module aggregation](algorithms.md#8-module-aggregation).
 
-### Author signal profiles — experimental *(only with `--experimental-ai-signal`)*
-Per-author profile type (`Real Growth` / `AI Amplified Healthy` /
-`Fake Velocity` / `Bot` / `Insufficient Data`), signal strength,
-evidence weight, and a plain-text explanation. **Read it as:** *whose
-recent activity shape is worth a closer look* — explicitly not a
-verdict on AI authorship or performance. Feeds:
-[AI detector](algorithms.md#10-ai-amplification-detector) +
-[quality signal](algorithms.md#11-quality-signal) +
-[profile classifier](algorithms.md#12-author-profile-classifier).
-
-### PR activity mix *(only with `--with-reviews`)*
-The breakdown of PRs by category (feature / refactor / cleanup / test /
-docs / chore) and a **Top churned files** sub-table. **Read it as:** how
-much of the throughput is real feature work vs noise, and which files
-churn the most. Feeds: [diff classifier](algorithms.md#15-diff-classifier).
-
-### Knowledge decay — top concerns
-The files with the highest decay score: top owner, days since they last
-touched it, lines changed by others since, and the 30/60/90-day
-projection. **Read it as:** files whose knowledge is going stale on a
-predictable trajectory. Feeds:
-[knowledge decay](algorithms.md#3-knowledge-decay).
+### Sections removed in 0.0.5a / 0.0.5c (BREAKING)
+The HTML report dropped these sections because they were either passive
+(no action), low-CTO-value, or duplicated cheaper signals. The engines
+still compute the data and the recommendation rules still fire — only
+the display was dropped.
+- **Activity summary** — basic git stats every tool provides.
+- **Central models** — niche, low-CTO value; coupling risk is already
+  flagged by the bus factor and the importance filter.
+- **Structural backbone** — used only as an internal recommendation
+  filter.
+- **PR activity mix + top churned files** — *Correction load* is the
+  stronger, action-generating equivalent.
+- **CODEOWNERS validation** *(0.0.5c)* — the mismatched-owner and
+  stale-entry findings still produce `CODEOWNERS_UPDATE`
+  recommendations; the standalone validation section was redundant
+  next to that punch list.
 
 ---
 

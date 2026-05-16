@@ -108,10 +108,11 @@ Be honest about what the numbers are and are not:
   `--with-reviews` and a GitHub or Bitbucket Cloud remote with
   credentials. Without it, those sections are simply absent — the rest
   of the report still works.
-- **The AI-signal layer is experimental.** It is behind
-  `--experimental-ai-signal`, compares an author only to *their own*
-  history, and detects an activity-shape shift — not AI authorship.
-  Treat `FAKE_VELOCITY` as "worth a closer look", not a verdict.
+- **Correction load and AI readiness target work surfaces.** Both look
+  at the file (or service), not the author. Correction load is the share
+  of recent commits to a file that are follow-up fixes/reverts; AI
+  readiness is per-service coverage of agent rules / specs / prompts /
+  architecture / skills — *not* an AI-generated-code detector.
 - **`scan` analyzes a window.** Everything is scoped to `--since-days`
   (default 180). A repo's deep history is not considered unless you
   widen the window.

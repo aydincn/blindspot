@@ -32,7 +32,7 @@ class FragilityPattern(str, Enum):
     """
     REVIEW_WITHOUT_SCRUTINY = "Review without scrutiny"
     SINGLE_OWNER_CONCENTRATION = "Single-owner concentration"
-    VELOCITY_WITHOUT_REVIEW = "Velocity without review"
+    FRAGILE_VELOCITY = "Fragile velocity"
 
 
 @dataclass(frozen=True, slots=True)

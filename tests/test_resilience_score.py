@@ -1,14 +1,7 @@
 from datetime import UTC, datetime
 
-from blindspot.ai_signal.models import (
-    AIFlag,
-    AISignal,
-    AuthorProfile,
-    AuthorProfileType,
-    QualitySignal,
-    SignalStrength,
-)
 from blindspot.resilience import ResilienceScoreEngine
+from blindspot.resilience.score import ResilienceScore, letter_grade
 from blindspot.review_graph.engine import FileReviewStats
 from blindspot.risk_models.bus_factor import ServiceBusFactor
 from blindspot.risk_models.knowledge_decay import FileDecay
@@ -29,23 +22,6 @@ def _decay(file: str, score: float) -> FileDecay:
         decay_score=score,
         risk_level="critical" if score >= 0.75 else "medium",
         projections={30: score, 60: score, 90: score},
-    )
-
-
-def _profile(email: str, profile_type: AuthorProfileType) -> AuthorProfile:
-    ai = AISignal(
-        author_email=email, flag=AIFlag.LOW, score=0.0,
-        frequency_score=0, volume_score=0, message_score=0,
-        large_commit_score=0, timing_score=0,
-        recent_commits=10, baseline_commits=10,
-    )
-    return AuthorProfile(
-        author_email=email, author_name="A",
-        profile_type=profile_type,
-        signal_strength=SignalStrength.STRONG,
-        evidence_weight=1.0,
-        ai_signal=ai, quality_signal=None,
-        explanation="",
     )
 
 
@@ -87,25 +63,12 @@ def test_review_subscore_uses_rubber_stamp_and_diversity():
     assert score.review is not None and score.review > 60
 
 
-def test_activity_subscore_penalises_fake_velocity():
-    services = [_service("a", bf=3, risk="healthy")]
-    decays = [_decay("f.py", 0.1)]
-    profiles = {
-        "good@x.com": _profile("good@x.com", AuthorProfileType.REAL_GROWTH),
-        "good2@x.com": _profile("good2@x.com", AuthorProfileType.REAL_GROWTH),
-        "bad@x.com": _profile("bad@x.com", AuthorProfileType.FAKE_VELOCITY),
-    }
-    score = ResilienceScoreEngine().compute(services, decays, author_profiles=profiles)
-    assert score.activity is not None and score.activity < 80
-
-
 def test_missing_sub_scores_renormalise_overall():
     services = [_service("a", bf=3, risk="healthy")]
     decays = [_decay("f.py", 0.1)]
     score = ResilienceScoreEngine().compute(services, decays)
-    # No review_stats, no profiles. Overall should be based purely on ownership+decay.
+    # No review_stats. Overall should be based purely on ownership+decay.
     assert score.review is None
-    assert score.activity is None
     assert score.overall > 0
 
 
@@ -120,3 +83,27 @@ def test_band_thresholds():
     decays = [_decay("f.py", 0.0)]
     score = ResilienceScoreEngine().compute(services, decays)
     assert score.band in ("Strong", "Moderate")
+
+
+# ---------------------------------------------------------------------------
+# Letter grades (0.0.5a)
+
+def test_letter_grade_thresholds():
+    assert letter_grade(95) == "A"
+    assert letter_grade(85) == "B"
+    assert letter_grade(75) == "C"
+    assert letter_grade(65) == "D"
+    assert letter_grade(50) == "F"
+    assert letter_grade(0) == "F"
+    assert letter_grade(None) is None
+
+
+def test_resilience_score_letter_grade_properties():
+    score = ResilienceScore(
+        overall=72, ownership=95, decay=65, review=None,
+        band="Moderate", summary="…",
+    )
+    assert score.overall_grade == "C"
+    assert score.ownership_grade == "A"
+    assert score.decay_grade == "D"
+    assert score.review_grade is None

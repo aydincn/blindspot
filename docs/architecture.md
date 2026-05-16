@@ -27,7 +27,7 @@ self-contained HTML file.
    └──────────┘          └────────────────┘       └─────────────┘
    git history,          ownership, risk_models,   ReportContext →
    GitHub/Bitbucket      dependency_graph,         Jinja2 template →
-   PR data,              review_graph, ai_signal,  single HTML file
+   PR data,              review_graph,             single HTML file
    CODEOWNERS,           diff_analysis, resilience,
    mailmap, filters      codeowners, trend, actions,
                          narrative
@@ -50,13 +50,12 @@ Each directory under `src/blindspot/` is one module with one job.
 | `collector/` | Reads raw input: git commits (`git.py`), `.mailmap` identity merging (`mailmap.py`), bot detection (`bots.py`), binary/generated file filtering (`filters.py`), and the GitHub + Bitbucket PR-data providers. |
 | `collector/review_models.py` | The provider-agnostic `PullRequest` / `Review` / `ReviewComment` / `PullRequestFile` dataclasses — produced identically by the GitHub and Bitbucket collectors. |
 | `ownership/` | Computes weighted per-file ownership coverage from commits (+ optional review signal). Produces `OwnershipMap`. |
-| `risk_models/` | Bus factor (`bus_factor.py`), knowledge decay (`knowledge_decay.py`), departure simulation (`departure.py`) — the three core risk algorithms. |
+| `risk_models/` | Bus factor (`bus_factor.py`), knowledge decay (`knowledge_decay.py`), departure simulation (`departure.py`), correction load (`correction_load.py`), AI readiness (`ai_readiness.py`). |
 | `dependency_graph/` | Builds the file import graph (`builder.py` + 11 language `extractors/`), ranks files by PageRank (`importance.py`), rolls up to a module map (`aggregation.py`), and an optional LLM import resolver (`llm_fallback.py`). |
 | `review_graph/` | Turns PR review data into per-file review-hygiene stats (rubber-stamp ratio, reviewer diversity, approval latency). |
-| `ai_signal/` | Experimental author profiling: AI-amplification detector, code-quality signal, and the classifier that combines them. |
-| `diff_analysis/` | Classifies files (code/test/docs/chore) and PRs (feature/refactor/cleanup/test/docs/chore); produces the churn summary. |
+| `diff_analysis/` | Classifies files (code/test/docs/chore), PRs (feature/refactor/cleanup/test/docs/chore), and commit messages (`commit_intent.py`, EN+TR FIX/REVERT/FEATURE detection). |
 | `codeowners/` | Parses a `CODEOWNERS` file and validates it against actual ownership (aligned/mismatch/stale/orphan/team_only). |
-| `resilience/` | Composite 0–100 Engineering Resilience Score from the ownership / decay / review / activity sub-signals. |
+| `resilience/` | Composite 0–100 Engineering Resilience Score from the ownership / decay / review sub-signals. |
 | `trend/` | Recomputes resilience at past points in time (90/60/30/0 days ago) for the trend view. |
 | `actions/` | The recommendation engine — seven rules that turn signals into a prioritised action list, with fragility-pattern tagging. |
 | `narrative/` | Optional LLM layer: an executive summary on top of the report, and a departure briefing. Provider/model/key config lives here. |
@@ -91,11 +90,12 @@ For the algorithm inside each engine, see
    `DependencyGraphBuilder.build()` → `ImportanceEngine.compute()` (the
    importance map) → `aggregate_modules()` (the module map) →
    `top_models()` (central models). *(cli.py:397-404)*
-7. **AI signal** *(if `--experimental-ai-signal`)* —
-   `AIAmplificationDetector` → `QualitySignalEngine` → `AuthorProfiler`.
-   *(cli.py:566-570)*
+7. **Correction load + AI readiness** — `CorrectionLoadEngine.compute()`
+   classifies each commit's intent and computes per-author and per-file
+   correction ratios; `AIReadinessEngine.detect()` builds the coverage
+   matrix of AI-native operational artifacts.
 8. **Resilience score** — `ResilienceScoreEngine.compute()` over the
-   bus-factor / decay / review / author-profile signals. *(cli.py:614)*
+   bus-factor / decay / review signals.
 9. **Trend** *(if `--with-trend`)* — `TrendEngine.compute()` replays
    ownership + decay + resilience at 90/60/30/0 days ago. *(cli.py:685)*
 10. **Departure scenarios** *(if `--simulate-top-departures` > 0)* —

@@ -31,7 +31,6 @@ _LABELS: dict[str, dict[str, str]] = {
         "dim_ownership": "ownership concentration",
         "dim_decay": "knowledge decay",
         "dim_review": "review hygiene",
-        "dim_activity": "author activity signals",
         "verdict_score": "Resilience is **{band}** ({score}/100).",
         "verdict_weakest": "Weakest dimension: {dim}.",
         "para_counts_lead": "Risk inventory:",
@@ -39,19 +38,22 @@ _LABELS: dict[str, dict[str, str]] = {
         "para_counts_decay": "{n} file(s) are decaying critically",
         "para_counts_orphans": "{n} file(s) would become orphans if the top contributor leaves",
         "para_counts_rubber": "{n} file(s) carry rubber-stamp review patterns",
+        "para_counts_correction": "{n} file(s) carry high correction load (≥35% fix/revert)",
+        "para_counts_ai_gap": "{n} service(s) lack AI-readable operational context",
         "para_recommendation": "Top recommended action: {action}",
         "headline_pair": "Pair {owner} on '{service}' — bus factor 1 across {n} files",
         "headline_orphan": "Establish a successor for {owner}'s work — {n} files would orphan without them",
         "headline_review": "Add review depth requirement for '{file}' — {pct}% of approvals leave no substantive comment",
         "headline_decay": "Knowledge transfer for '{file}' — {pct}% decay, owner away {days} days",
-        "headline_velocity": "Deep review of recent work by {author} — output spike paired with elevated quality risk",
+        "headline_correction": "Stabilize delivery on '{file}' — {pct}% of recent commits are fixes or reverts",
         "headline_healthy": "No critical concentrations detected — maintain current ownership distribution",
         "rationale_decay": "Decay {pct}% — owner last touched {days} days ago, {lines} lines changed by others since.",
         "rationale_bus": "Bus factor 1 over {n} files — {owner} holds {pct}% of effective ownership.",
         "rationale_rubber": "{pct}% of approvals on this file arrived without a substantive review comment ({n} reviews).",
         "rationale_diversity": "Reviewer concentration HHI {pct}% — one reviewer carries most of this file's review load.",
         "rationale_fast": "Median approval latency {minutes} minutes over {n} samples — too short for substantive review.",
-        "rationale_velocity": "Recent activity shape shifted sharply versus the author's own baseline, with elevated quality risk.",
+        "rationale_correction": "{pct}% of recent commits to this file are follow-up fixes or reverts — work surface ships fast but corrections pay the bill.",
+        "rationale_ai_gap": "Only {n}/5 AI-native context categories present — new contributors (human or AI) cannot load this service's context without reading code.",
         "rationale_codeowners_mismatch": "Declared owner does not include the actual top contributor ({owner} at {pct}% coverage).",
         "rationale_codeowners_stale": "Declared owner has not touched this file recently.",
     },
@@ -63,7 +65,6 @@ _LABELS: dict[str, dict[str, str]] = {
         "dim_ownership": "sahiplik yoğunlaşması",
         "dim_decay": "bilgi erozyonu",
         "dim_review": "review hijyeni",
-        "dim_activity": "yazar aktivite sinyalleri",
         "verdict_score": "Resilience **{band}** ({score}/100).",
         "verdict_weakest": "En zayıf boyut: {dim}.",
         "para_counts_lead": "Risk envanteri:",
@@ -71,19 +72,22 @@ _LABELS: dict[str, dict[str, str]] = {
         "para_counts_decay": "{n} dosyada kritik bilgi erozyonu",
         "para_counts_orphans": "Top katkı sağlayan ayrılırsa {n} dosya sahipsiz kalır",
         "para_counts_rubber": "{n} dosyada rubber-stamp review pattern'i",
+        "para_counts_correction": "{n} dosyada yüksek düzeltme yükü (≥%35 fix/revert)",
+        "para_counts_ai_gap": "{n} servis AI-okur operasyonel doküman taşımıyor",
         "para_recommendation": "En öncelikli aksiyon: {action}",
         "headline_pair": "{owner}'i '{service}' servisinde eşle — bus factor 1, {n} dosya",
         "headline_orphan": "{owner} için halef belirle — ayrılırsa {n} dosya sahipsiz kalır",
         "headline_review": "'{file}' için review derinliği zorunlu kıl — onayların %{pct}'i yorumsuz geçiyor",
         "headline_decay": "'{file}' için bilgi transferi — %{pct} decay, owner {days} gündür dosyaya dokunmamış",
-        "headline_velocity": "{author}'un son işlerini derin review'a al — output spike + yükselmiş kalite riski",
+        "headline_correction": "'{file}' için teslimat stabilizasyonu — son commitlerin %{pct}'i fix veya revert",
         "headline_healthy": "Kritik yoğunlaşma tespit edilmedi — mevcut sahiplik dağılımını koru",
         "rationale_decay": "Decay %{pct} — owner {days} gün önce dokundu, sonra başkaları {lines} satır değiştirdi.",
         "rationale_bus": "{n} dosya üzerinde bus factor 1 — {owner} sahiplik payı %{pct}.",
         "rationale_rubber": "Bu dosyadaki onayların %{pct}'i yorumsuz geçti ({n} review).",
         "rationale_diversity": "Reviewer yoğunlaşma HHI %{pct} — tek bir reviewer review yükünün çoğunu taşıyor.",
         "rationale_fast": "Median onay süresi {minutes} dakika ({n} örnek) — substansiyel review için fazla kısa.",
-        "rationale_velocity": "Yazarın yakın aktivite şekli kendi baseline'ından sertçe sapmış, kalite riski yükselmiş.",
+        "rationale_correction": "Bu dosyaya gelen son commitlerin %{pct}'i fix veya revert — hızlı ship'leniyor ama düzeltmeler bedelini ödüyor.",
+        "rationale_ai_gap": "5 AI-native context kategorisinden sadece {n}'i mevcut — yeni katkı sağlayanlar (insan veya AI) bu servisi koda bakmadan anlayamaz.",
         "rationale_codeowners_mismatch": "Bildirilen owner gerçek top katkı sağlayanı içermiyor ({owner} %{pct} sahiplik).",
         "rationale_codeowners_stale": "Bildirilen owner bu dosyaya yakın zamanda dokunmamış.",
     },
@@ -146,18 +150,21 @@ class RuleBasedNarrator:
                 file=file, pct=int(round(ratio * 100)),
             )
 
-        # 4. Worst decay file
+        # 4. Worst correction-load file (fragile velocity)
+        worst_correction = self._worst_correction_load(ctx)
+        if worst_correction is not None:
+            file, ratio = worst_correction
+            return _label(L, "headline_correction").format(
+                file=file, pct=int(round(ratio * 100)),
+            )
+
+        # 5. Worst decay file
         worst_decay = self._worst_decay(ctx)
         if worst_decay is not None:
             file, score, days = worst_decay
             return _label(L, "headline_decay").format(
                 file=file, pct=int(round(score * 100)), days=int(days),
             )
-
-        # 5. Fake-velocity author
-        fake_velocity = self._fake_velocity_author(ctx)
-        if fake_velocity is not None:
-            return _label(L, "headline_velocity").format(author=fake_velocity)
 
         # 6. Healthy fallback
         return _label(L, "headline_healthy")
@@ -232,9 +239,17 @@ class RuleBasedNarrator:
                 minutes = _extract_int(ev, "median_approval")
                 n = _extract_int(ev, "samples")
                 return _label(L, "rationale_fast").format(minutes=minutes, n=n)
-        if action.pattern == FragilityPattern.VELOCITY_WITHOUT_REVIEW:
-            return _label(L, "rationale_velocity")
+        if action.pattern == FragilityPattern.FRAGILE_VELOCITY:
+            pct = _extract_pct(ev, "correction_ratio")
+            return _label(L, "rationale_correction").format(pct=pct)
         if cat == ActionCategory.KNOWLEDGE_TRANSFER:
+            # AI-readiness gap actions share the KNOWLEDGE_TRANSFER category
+            # but carry different evidence (coverage= rather than decay=).
+            if "coverage=" in ev and "decay" not in ev:
+                count_str = _extract_token(ev, "coverage")
+                # coverage=N/5
+                count = count_str.split("/")[0] if count_str and "/" in count_str else "0"
+                return _label(L, "rationale_ai_gap").format(n=count)
             pct = _extract_pct(ev, "decay")
             days = _extract_int(ev, "days_since_touch")
             lines = _extract_int(ev, "lines_after")
@@ -296,12 +311,14 @@ class RuleBasedNarrator:
         worst = critical[0]  # decay_top is already sorted desc
         return worst.file, worst.decay_score, worst.days_since_owner_touch
 
-    def _fake_velocity_author(self, ctx) -> str | None:
-        from blindspot.ai_signal.models import AuthorProfileType
-        for p in ctx.author_profiles:
-            if p.profile_type == AuthorProfileType.FAKE_VELOCITY:
-                return p.author_name or p.author_email
-        return None
+    def _worst_correction_load(self, ctx) -> tuple[str, float] | None:
+        candidates = [
+            f for f in ctx.correction_load_files if f.correction_ratio >= 0.35
+        ]
+        if not candidates:
+            return None
+        worst = candidates[0]  # already sorted by -correction_ratio
+        return worst.file, worst.correction_ratio
 
     # ------------------------------------------------------------------
     # Risk counts (for executive summary paragraph 2)
@@ -333,23 +350,38 @@ class RuleBasedNarrator:
         if rubber_count:
             out.append(_label(L, "para_counts_rubber").format(n=rubber_count))
 
+        correction_count = sum(
+            1 for f in ctx.correction_load_files if f.correction_ratio >= 0.35
+        )
+        if correction_count:
+            out.append(_label(L, "para_counts_correction").format(n=correction_count))
+
+        if ctx.ai_readiness is not None:
+            ai_gap_count = sum(
+                1 for c in ctx.ai_readiness.services if c.coverage_count < 2
+            )
+            if ai_gap_count:
+                out.append(_label(L, "para_counts_ai_gap").format(n=ai_gap_count))
+
         return out
 
     def _weakest_dimension(self, ctx) -> str | None:
         if ctx.resilience is None:
             return None
         L = self.language
+        from blindspot.resilience.score import letter_grade
         subs = {
             "ownership": ctx.resilience.ownership,
             "decay": ctx.resilience.decay,
             "review": ctx.resilience.review,
-            "activity": ctx.resilience.activity,
         }
         available = {k: v for k, v in subs.items() if v is not None}
         if not available:
             return None
-        weakest = min(available.items(), key=lambda kv: kv[1])[0]
-        return _label(L, "dim_" + weakest)
+        key, value = min(available.items(), key=lambda kv: kv[1])
+        grade = letter_grade(value)
+        label = _label(L, "dim_" + key)
+        return f"{label} ({grade})" if grade else label
 
 
 # ----------------------------------------------------------------------

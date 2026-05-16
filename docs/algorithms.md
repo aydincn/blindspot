@@ -115,13 +115,24 @@ It is clamped to a minimum of 1. Risk level maps the integer:
 | ≥ 4 | `healthy` |
 
 **Service rollup.** A "service" is the top-level directory of a path
-(`top_level_dir()`, `bus_factor.py:27-39`). Per service, each author's
-coverages across all files in the service are summed and divided by the
-service file count, then the same cumulative-coverage algorithm runs on
-those per-person averages.
+under the effective service prefix. The prefix is resolved in `cli.py`:
+when a source root is detected (`auto_detect_code_root()` — `src/`,
+`lib/`, `app/`), and it contains exactly one package-style directory
+(e.g. `src/blindspot/`), the prefix becomes `src/blindspot/` and a path
+like `src/blindspot/risk_models/correction_load.py` rolls up to service
+`risk_models`. With multiple packages under the source root, the prefix
+stays at the source root. With no source root, the path's literal first
+segment is used. The user can override the source root with
+`--code-root`.
 
-`top_level_dir()` has three special buckets:
-- `(root)` — files with no parent directory
+Per service, each author's coverages across all files in the service
+are summed and divided by the service file count, then the same
+cumulative-coverage algorithm runs on those per-person averages.
+
+`top_level_dir()` (`bus_factor.py:27-39`) is what produces the segment
+after the prefix is stripped. It has three special buckets:
+- `(root)` — files with no parent directory (or directly under the
+  service prefix)
 - `(config)` — top-level dotfile tooling dirs (`.husky`, `.vscode`,
   `.idea`, `.cursor`, `.devcontainer`, … — see `CONFIG_DOTFILE_PREFIXES`)
   so a one-file `.codex/` does not light up as a critical service
@@ -434,144 +445,100 @@ Per file:
 
 ---
 
-## 10. AI amplification detector
+## 10. Correction Load
 
-**Measures (experimental):** whether an author's *recent* activity looks
-unusually amplified versus their own historical baseline — a behavioural
-proxy for heavy AI assistance. It does **not** detect AI-generated code;
-it detects a shift in activity shape.
+**Measures:** the per-author and per-file ratio of recent commits that
+are follow-up fixes or reverts. A high ratio is *observable* evidence of
+stability debt — work shipped fast but corrections are paying for it. We
+look at the work surface, not the person's style.
 
-**Source:** `src/blindspot/ai_signal/detector.py`. Requires
-`--experimental-ai-signal`.
+**Source:** `src/blindspot/risk_models/correction_load.py`, plus
+`src/blindspot/diff_analysis/commit_intent.py` for the multilingual
+message classifier.
 
-**How it works.** Split each author's commits into a recent window
-(last `measurement_days`) and a baseline window (the
-`baseline_days` before that). If the baseline has fewer than
-`min_baseline_commits`, emit a neutral `LOW` signal. Otherwise compute
-five sub-scores, each a *ratio* of recent vs baseline behaviour mapped
-through a bucket table:
+**How it works.**
 
-| Signal | Ratio measured | Buckets (ratio > x → score) |
-|---|---|---|
-| `frequency` | commits/day recent vs baseline | 3.0→1.0, 2.0→0.7, 1.5→0.4 |
-| `volume` | avg change size recent vs baseline | 4.0→1.0, 2.5→0.7, 1.5→0.4 |
-| `message` | avg commit-message length recent vs baseline | 2.5→1.0, 1.8→0.6, 1.3→0.3 |
-| `large_commit` | share of recent commits > 3× baseline avg size | 0.5→1.0, 0.3→0.6, 0.15→0.3 |
-| `timing` | off-hours commit ratio recent vs baseline | 2.0→0.8, 1.5→0.4 |
+1. For every non-merge commit, classify intent into one of four categories
+   using `classify_commit(message)`:
+   - **FEATURE** — `feat:` conventional prefix or feature keywords
+   - **FIX** — `fix:` / `bugfix:` / `hotfix:` conventional prefix, or
+     fix/bug/typo/regression keywords (EN + TR)
+   - **REVERT** — `revert:` prefix, `Revert "..."` git auto-subject, or
+     revert/rollback keywords
+   - **OTHER** — `chore:`, `docs:`, `refactor:`, anything else
+2. Aggregate counts per author and per file.
+3. Compute `correction_ratio = (fix + revert) / total`.
+4. Filter out authors/files with fewer than `min_commits_for_signal` (5)
+   commits — the ratio is noisy below that.
+5. Map ratio to a risk level using thresholds.
 
-"Off-hours" is any UTC hour outside the busiest 8-hour window found in
-the author's baseline commits (`_busy_window()`); falls back to
-22:00–08:00 UTC if the baseline is too thin.
-
-Combined score and flag:
-
-```
-score = frequency×0.30 + volume×0.25 + message×0.20 + large_commit×0.15 + timing×0.10
-flag  = HIGH   if score ≥ 0.70
-        MEDIUM if score ≥ 0.40
-        LOW    otherwise
-```
-
-**Parameters** (`AIAmplificationDetector` defaults):
+**Parameters** (`CorrectionLoadEngine` defaults):
 
 | Name | Default | Meaning |
 |---|---|---|
-| `measurement_days` | 90 | Recent window length |
-| `baseline_days` | 365 | Baseline window length (immediately before the recent window) |
-| `high_threshold` | 0.70 | Score at/above which the flag is `HIGH` |
-| `medium_threshold` | 0.40 | Score at/above which the flag is `MEDIUM` |
-| `weights` | (0.30, 0.25, 0.20, 0.15, 0.10) | Sub-score weights, in table order |
-| `min_baseline_commits` | 5 | Below this baseline size, no signal is computed |
+| `min_commits_for_signal` | 5 | Authors / files below this are excluded |
+| `high_threshold` | 0.35 | Ratio at/above → `high` |
+| `critical_threshold` | 0.50 | Ratio at/above → `critical` |
 
-**Output:** `AISignal` per author (flag, combined score, all five
-sub-scores, window commit counts).
+**Output:** `CorrectionLoadReport` with two sorted tuples,
+`authors: AuthorCorrectionLoad[]` and `files: FileCorrectionLoad[]`.
+
+**Recommendation tie-in:** Any file whose ratio is `≥ high_threshold`
+emits a `Fragile velocity` fragility pattern in §14.
 
 ---
 
-## 11. Quality signal
+## 11. AI Readiness
 
-**Measures (experimental):** code-quality risk for an author's recent
-work — rework, bug-fixing, reverts, rejected reviews, missing tests,
-thin PR descriptions.
+**Measures:** per-service coverage of AI-native operational artifacts —
+agent rules, specs, prompts, architecture decisions, skills. The premise:
+in AI-accelerated teams, organizational memory no longer lives only in
+code. A service with no artifacts is weaker than its line count suggests
+because new contributors (human or AI) have nothing to load.
 
-**Source:** `src/blindspot/ai_signal/quality.py`. Requires
-`--experimental-ai-signal`.
+**This is not an AI-generated-code detector.** It does not look at
+content style, statistical fingerprints, or commit shape — only at
+whether documented operational context exists.
 
-**How it works.** For each author with at least `min_recent_commits` in
-the last `measurement_days`, compute six sub-scores, each in `[0, 1]`:
+**Source:** `src/blindspot/risk_models/ai_readiness.py`.
 
-| Signal | What it measures |
+**Categories** (each a Boolean):
+
+| Category | Detected by paths matching |
 |---|---|
-| `churn` | Share of files the author re-touched (≥2 times) in the window — proxy for rework. `min(reworked/total / 0.4, 1)` |
-| `bug_keyword` | Share of commits whose message contains fix/bug/hotfix/patch/broken/repair/issue/crash/error/regression. `min(ratio / 0.4, 1)` |
-| `revert` | Revert commits, `min(reverts / 3, 1)` |
-| `review_rejection` | Share of the author's PRs that got a `CHANGES_REQUESTED` review. `min(ratio / 0.4, 1)` |
-| `test_coverage` | 0.0 if test additions ≥ 50% of code additions; 0.4 if ≥ 20%; 1.0 if zero tests and ≥100 code lines; 0.8 otherwise |
-| `pr_description` | Share of PRs missing ≥2 of {body <50 chars, no issue ref, no label}. `min(ratio / 0.5, 1)` |
+| `agent_rules` | `CLAUDE.md`, `AGENTS.md`, `.cursor/`, `.github/copilot-instructions.md`, `.aider`, `.windsurf`, `.codex`, `.cody` |
+| `specs` | `specs/`, `spec/`, `specifications/` |
+| `prompts` | `prompts/`, `prompt/` |
+| `architecture` | `ADRs/`, `adr/`, `architecture/`, `docs/architecture/`, `docs/decisions/`, `docs/adr/`, `ARCHITECTURE.md` |
+| `skills` | `skills/`, `agents/` |
 
-Combined:
+**How it works.** A single pass over the tracked file list:
 
-```
-risk = churn×0.20 + bug×0.20 + revert×0.15 + review_rejection×0.15
-     + test_coverage×0.10 + pr_description×0.20
-```
+1. Match against full paths → repo-level coverage row (`target: "(repo)"`).
+2. Group files by `top_level_dir()` (skipping `(config)` / `(root)` /
+   `(other)`), strip the prefix, match the rest → one coverage row per
+   service.
 
-If the author has **no PR data** (git-only), the two PR-derived signals
-are dropped and the remaining four weights (`0.20+0.20+0.15+0.10`) are
-renormalised so the score is not artificially deflated.
+**Output:** `AIReadinessReport` with one repo-level `AIReadinessCoverage`
+and a tuple of service-level coverages. Each exposes
+`coverage_count` (0..5) and `coverage_ratio` (0..1).
 
-**Parameters** (`QualitySignalEngine` defaults):
-
-| Name | Default | Meaning |
-|---|---|---|
-| `measurement_days` | 90 | Recent window length |
-| `min_recent_commits` | 3 | Authors below this are skipped |
-| `weights` | (0.20, 0.20, 0.15, 0.15, 0.10, 0.20) | churn, bug, revert, review_rejection, test_cov, pr_desc |
-| `min_pr_body_chars` | 50 | PR body shorter than this counts as a "miss" |
-
-**Output:** `QualitySignal` per author (combined `risk_score` + all six
-sub-scores).
+**Recommendation rule (0.0.5a+).** Services with `coverage_count < 2`
+emit a `KNOWLEDGE_TRANSFER` recommendation titled
+*"Add AI-readable operational context for {service}"*. Priority is
+**MEDIUM** when the service's bus factor is ≤ 1 (the gap compounds with
+knowledge concentration), otherwise **LOW**. The description lists the
+missing categories so the action is concrete; the evidence string
+captures `coverage=N/5, bus_factor=M`. The rule and threshold live on
+`RecommendationEngine` as `ai_readiness_min_coverage` (default 2) — see
+[recommendation engine](#13-recommendation-engine) §13.
 
 ---
 
-## 12. Author profile classifier
-
-**Measures (experimental):** turns the AI signal + quality signal into a
-single human-readable profile per author, plus an *evidence weight* that
-expresses how much to trust that author's activity signal.
-
-**Source:** `src/blindspot/ai_signal/profile.py`.
-
-**Classification** (`_classify()`):
-- Author identity matches a bot pattern (`is_bot_author()`) → `BOT`
-- AI baseline < 5 commits → `INSUFFICIENT_DATA`
-- AI flag is `LOW` → `REAL_GROWTH`
-- AI flag `MEDIUM`/`HIGH` and `quality_risk ≥ 0.6` → `FAKE_VELOCITY`
-- AI flag `MEDIUM`/`HIGH` and `quality_risk < 0.6` → `AI_AMPLIFIED_HEALTHY`
-
-**Evidence weight** (`_evidence_weight()`, range `[0.6, 1.0]` — a
-*multiplier*, never a punishment):
-
-| AI flag | quality_risk < 0.3 | 0.3 ≤ risk < 0.6 | risk ≥ 0.6 |
-|---|---|---|---|
-| `LOW` | 1.00 | 1.00 | 1.00 |
-| `MEDIUM` | 0.95 | 0.85 | 0.75 |
-| `HIGH` | 0.90 | 0.75 | 0.60 |
-
-Signal strength from the weight: `≥0.90` → `STRONG`, `≥0.75` →
-`MODERATE`, else `LOW`.
-
-**Output:** `AuthorProfile` per author (profile type, signal strength,
-evidence weight, the underlying AI + quality signals, a plain-text
-explanation). Feeds the resilience "activity" sub-score (§13) and the
-"fake velocity" recommendation rule (§14).
-
----
-
-## 13. Resilience score
+## 12. Resilience score
 
 **Measures:** one 0–100 number a non-technical stakeholder can track over
-time, synthesised from four independent health signals.
+time, synthesised from three independent health signals.
 
 **Source:** `src/blindspot/resilience/score.py`.
 
@@ -583,9 +550,6 @@ time, synthesised from four independent health signals.
 - **decay** — `(1 − avg_decay_score) × 100` over all files.
 - **review** — `((1 − avg_rubber_stamp) × 0.6 + avg_diversity × 0.4) × 100`
   over files that have at least one review. `None` if no review data.
-- **activity** — `(1 − fake_velocity_count / relevant_author_count) × 100`,
-  where "relevant" excludes `BOT` and `INSUFFICIENT_DATA` authors.
-  `None` if no AI-signal data.
 
 **Overall.** A weighted average over *available* sub-scores only —
 missing signals are excluded from the denominator, not treated as zero:
@@ -607,18 +571,34 @@ overall = Σ (weight[k] × sub[k])  /  Σ weight[k]      for k in available
 
 | Sub-score | Weight |
 |---|---|
-| ownership | 0.35 |
-| decay | 0.30 |
-| review | 0.20 |
-| activity | 0.15 |
+| ownership | 0.40 |
+| decay | 0.35 |
+| review | 0.25 |
 
-**Output:** `ResilienceScore` — `overall`, the four sub-scores (each
+**Output:** `ResilienceScore` — `overall`, the three sub-scores (each
 `int | None`), the `band`, and a one-line `summary` naming the weakest
 dimension.
 
+**Letter grades (0.0.5a+).** Each score also exposes a letter grade via
+the `letter_grade(value)` helper and the `overall_grade`,
+`ownership_grade`, `decay_grade`, `review_grade` properties:
+
+| Score | Grade |
+|---|---|
+| ≥ 90 | `A` |
+| ≥ 80 | `B` |
+| ≥ 70 | `C` |
+| ≥ 60 | `D` |
+| < 60 | `F` |
+
+The HTML report shows the letter grade beside each numeric sub-score
+and beside the overall score. The rule-based narrator's
+"weakest dimension" sentence also includes the grade in parentheses
+(e.g. *"Weakest dimension: ownership concentration (F)."*).
+
 ---
 
-## 14. Recommendation engine
+## 13. Recommendation engine
 
 **Measures:** turns all the signals above into a prioritised, deduplicated
 list of concrete next steps — and tags recurring ones with a named
@@ -636,7 +616,8 @@ fragility pattern.
 | Rubber stamp | `rubber_stamp_ratio ≥ 0.70`, ≥2 reviews, file is code | MEDIUM | `review-without-scrutiny` |
 | Reviewer diversity | `diversity_hhi < 0.20`, ≥3 reviews, file is code | LOW | — |
 | Fast approval | median approval latency < 1800 s, ≥3 samples, file is code | MEDIUM | `review-without-scrutiny` |
-| Fake velocity | author profile is `FAKE_VELOCITY` | HIGH | `velocity-without-review` |
+| Correction load | file `correction_ratio ≥ 0.35`, file is code | MEDIUM (HIGH if `critical`) | `fragile-velocity` |
+| AI-readiness gap | service `coverage_count < 2` | MEDIUM if bus factor ≤ 1 else LOW | — |
 | CODEOWNERS | declared owner mismatched or stale | MEDIUM (mismatch) / LOW (stale) | — |
 
 **Importance filter.** When an importance map is present (dependency
@@ -649,8 +630,8 @@ failure modes the report surfaces as badges:
 - **`review-without-scrutiny`** — approvals land without substantive
   review (rubber stamp + fast approval).
 - **`single-owner-concentration`** — a whole service rests on one person.
-- **`velocity-without-review`** — output spiked, quality risk rose, no
-  matching review depth.
+- **`fragile-velocity`** — a file ships fast but follow-up fixes/reverts
+  pay the bill (high correction load).
 
 **Parameters** (`RecommendationEngine` defaults):
 

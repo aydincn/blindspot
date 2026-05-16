@@ -156,7 +156,8 @@ collector produces, so everything downstream is identical.
 | Resilience score (ownership + decay sub-scores) | Resilience score (review sub-score) |
 | Trend | — |
 | CODEOWNERS validation | — |
-| AI-amplification signal (`--experimental-ai-signal`) | Quality signal's PR-derived components |
+| Correction load (commit-message intent) | — |
+| AI readiness (operational artifact coverage) | — |
 | Recommendations (the non-review rules) | Recommendations (rubber-stamp, diversity, fast-approval rules) |
 
 If review data is unavailable, those sections are simply absent from

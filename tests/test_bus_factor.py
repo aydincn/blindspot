@@ -101,3 +101,47 @@ def test_files_sorted_by_risk_first(make_repo):
     bf = BusFactorEngine().for_files(om)
     assert bf[0].file == "risky.py"
     assert bf[0].bus_factor == 1
+
+
+# ---------------------------------------------------------------------------
+# Service granularity factory (0.0.5c)
+
+def test_build_service_of_fallback_with_empty_prefix():
+    from blindspot.cli import _build_service_of
+    from blindspot.risk_models.bus_factor import top_level_dir
+    assert _build_service_of("") is top_level_dir
+
+
+def test_build_service_of_strips_prefix():
+    from blindspot.cli import _build_service_of
+    svc = _build_service_of("src/blindspot")
+    assert svc("src/blindspot/risk_models/correction_load.py") == "risk_models"
+    assert svc("src/blindspot/cli.py") == "(root)"
+    # Path outside prefix uses plain top_level_dir.
+    assert svc("tests/test_a.py") == "tests"
+
+
+def test_build_service_of_handles_trailing_slash():
+    from blindspot.cli import _build_service_of
+    svc = _build_service_of("src/blindspot/")
+    assert svc("src/blindspot/actions/recommender.py") == "actions"
+
+
+def test_resolve_service_prefix_auto_deepens_into_single_package(tmp_path):
+    from blindspot.cli import _resolve_service_prefix
+    (tmp_path / "src" / "blindspot").mkdir(parents=True)
+    (tmp_path / "src" / "__pycache__").mkdir()
+    assert _resolve_service_prefix(tmp_path, "src") == "src/blindspot"
+
+
+def test_resolve_service_prefix_keeps_root_when_multiple_packages(tmp_path):
+    from blindspot.cli import _resolve_service_prefix
+    (tmp_path / "src" / "pkg_a").mkdir(parents=True)
+    (tmp_path / "src" / "pkg_b").mkdir()
+    assert _resolve_service_prefix(tmp_path, "src") == "src"
+
+
+def test_resolve_service_prefix_empty_returns_empty(tmp_path):
+    from blindspot.cli import _resolve_service_prefix
+    assert _resolve_service_prefix(tmp_path, "") == ""
+    assert _resolve_service_prefix(tmp_path, ".") == ""

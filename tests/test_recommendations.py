@@ -7,16 +7,9 @@ from blindspot.actions import (
     RecommendationContext,
     RecommendationEngine,
 )
-from blindspot.ai_signal.models import (
-    AIFlag,
-    AISignal,
-    AuthorProfile,
-    AuthorProfileType,
-    QualitySignal,
-    SignalStrength,
-)
 from blindspot.review_graph.engine import FileReviewStats
 from blindspot.risk_models.bus_factor import FileBusFactor, ServiceBusFactor
+from blindspot.risk_models.correction_load import FileCorrectionLoad
 from blindspot.risk_models.knowledge_decay import FileDecay
 
 
@@ -150,43 +143,6 @@ def test_does_not_recommend_slow_down_when_latency_unknown():
     assert not any("Slow down fast" in a.title for a in actions)
 
 
-def test_recommends_deep_review_for_fake_velocity_author():
-    ai = AISignal(
-        author_email="risky@x.com",
-        flag=AIFlag.HIGH,
-        score=0.85,
-        frequency_score=1.0, volume_score=1.0, message_score=0.6,
-        large_commit_score=0.6, timing_score=0.4,
-        recent_commits=30, baseline_commits=20,
-    )
-    quality = QualitySignal(
-        author_email="risky@x.com",
-        risk_score=0.75,
-        churn_score=1.0, bug_keyword_score=1.0, revert_score=0.3,
-        review_rejection_score=0.0, test_coverage_score=1.0,
-        pr_description_score=0.0,
-        recent_commits=30,
-    )
-    profile = AuthorProfile(
-        author_email="risky@x.com",
-        author_name="Risky Dev",
-        profile_type=AuthorProfileType.FAKE_VELOCITY,
-        signal_strength=SignalStrength.LOW,
-        evidence_weight=0.60,
-        ai_signal=ai,
-        quality_signal=quality,
-        explanation="…",
-    )
-    ctx = RecommendationContext(
-        author_profiles={"risky@x.com": profile},
-        ownership_names={"risky@x.com": "Risky Dev"},
-    )
-    actions = RecommendationEngine().recommend(ctx)
-    a = next(a for a in actions if a.category == ActionCategory.QUALITY_GUARDRAIL)
-    assert a.priority == ActionPriority.HIGH
-    assert "Risky Dev" in a.title
-
-
 def test_returns_no_actions_when_state_is_healthy():
     ctx = RecommendationContext()
     actions = RecommendationEngine().recommend(ctx)
@@ -234,37 +190,6 @@ def test_fast_approval_tagged_with_review_without_scrutiny():
     assert a.pattern == FragilityPattern.REVIEW_WITHOUT_SCRUTINY
 
 
-def test_fake_velocity_tagged_with_velocity_without_review():
-    ai = AISignal(
-        author_email="risky@x.com",
-        flag=AIFlag.HIGH,
-        score=0.85,
-        frequency_score=1.0, volume_score=1.0, message_score=0.6,
-        large_commit_score=0.6, timing_score=0.4,
-        recent_commits=30, baseline_commits=20,
-    )
-    quality = QualitySignal(
-        author_email="risky@x.com",
-        risk_score=0.75,
-        churn_score=1.0, bug_keyword_score=1.0, revert_score=0.3,
-        review_rejection_score=0.0, test_coverage_score=1.0,
-        pr_description_score=0.0,
-        recent_commits=30,
-    )
-    profile = AuthorProfile(
-        author_email="risky@x.com",
-        author_name="Risky Dev",
-        profile_type=AuthorProfileType.FAKE_VELOCITY,
-        signal_strength=SignalStrength.LOW,
-        evidence_weight=0.60,
-        ai_signal=ai,
-        quality_signal=quality,
-        explanation="…",
-    )
-    ctx = RecommendationContext(author_profiles={"risky@x.com": profile})
-    actions = RecommendationEngine().recommend(ctx)
-    a = next(a for a in actions if a.category == ActionCategory.QUALITY_GUARDRAIL)
-    assert a.pattern == FragilityPattern.VELOCITY_WITHOUT_REVIEW
 
 
 def test_decay_filtered_when_importance_below_threshold():
@@ -311,3 +236,126 @@ def test_actions_are_sorted_high_priority_first():
     actions = RecommendationEngine().recommend(ctx)
     priorities = [a.priority for a in actions]
     assert priorities == sorted(priorities, key=lambda p: {"High": 0, "Medium": 1, "Low": 2}[p.value])
+
+
+def test_correction_load_emits_fragile_velocity_recommendation():
+    f = FileCorrectionLoad(
+        file="src/hot.py",
+        total_commits=20,
+        fix_commits=8,
+        revert_commits=2,
+        correction_ratio=0.50,
+        risk_level="critical",
+    )
+    ctx = RecommendationContext(correction_load_files=(f,))
+    actions = RecommendationEngine().recommend(ctx)
+    a = next(a for a in actions if a.category == ActionCategory.QUALITY_GUARDRAIL)
+    assert a.pattern == FragilityPattern.FRAGILE_VELOCITY
+    assert "src/hot.py" in a.target
+    # Targets a file (work surface), not a person.
+    assert "@" not in a.target
+
+
+def test_correction_load_below_threshold_emits_nothing():
+    f = FileCorrectionLoad(
+        file="src/calm.py",
+        total_commits=20,
+        fix_commits=3,
+        revert_commits=0,
+        correction_ratio=0.15,
+        risk_level="healthy",
+    )
+    ctx = RecommendationContext(correction_load_files=(f,))
+    actions = RecommendationEngine().recommend(ctx)
+    assert not any(a.pattern == FragilityPattern.FRAGILE_VELOCITY for a in actions)
+
+
+# ---------------------------------------------------------------------------
+# AI-readiness gap rule (0.0.5a — U1 promoted to risk model)
+
+def _readiness_coverage(target, agent_rules=False, specs=False, prompts=False,
+                        architecture=False, skills=False):
+    from blindspot.risk_models.ai_readiness import AIReadinessCoverage
+    return AIReadinessCoverage(
+        target=target,
+        agent_rules=agent_rules,
+        specs=specs,
+        prompts=prompts,
+        architecture=architecture,
+        skills=skills,
+    )
+
+
+def _readiness_report(*services, repo=None):
+    from blindspot.risk_models.ai_readiness import AIReadinessReport
+    if repo is None:
+        repo = _readiness_coverage("(repo)")
+    return AIReadinessReport(repo=repo, services=tuple(services))
+
+
+def test_ai_readiness_gap_recommends_low_when_no_bus_factor_pressure():
+    report = _readiness_report(_readiness_coverage("docs"))
+    ctx = RecommendationContext(ai_readiness=report)
+    actions = RecommendationEngine().recommend(ctx)
+    a = next(
+        a for a in actions
+        if a.category == ActionCategory.KNOWLEDGE_TRANSFER
+        and "AI-readable" in a.title
+    )
+    assert a.priority == ActionPriority.LOW
+    assert "docs" in a.target
+
+
+def test_ai_readiness_gap_priority_bumped_for_critical_bus_factor():
+    report = _readiness_report(_readiness_coverage("payment"))
+    svc = _service("payment", 8, "alice@x.com", 0.85)  # bus_factor=1, critical
+    ctx = RecommendationContext(services=(svc,), ai_readiness=report)
+    actions = RecommendationEngine().recommend(ctx)
+    a = next(
+        a for a in actions
+        if a.category == ActionCategory.KNOWLEDGE_TRANSFER
+        and "AI-readable" in a.title
+    )
+    assert a.priority == ActionPriority.MEDIUM
+    assert "Bus factor is 1" in a.description
+
+
+def test_ai_readiness_gap_skips_services_with_enough_coverage():
+    # 2/5 categories present → above threshold, no recommendation
+    cov = _readiness_coverage("docs", agent_rules=True, specs=True)
+    report = _readiness_report(cov)
+    ctx = RecommendationContext(ai_readiness=report)
+    actions = RecommendationEngine().recommend(ctx)
+    assert not any(
+        "AI-readable" in a.title for a in actions
+    )
+
+
+def test_ai_readiness_gap_no_readiness_report_emits_nothing():
+    ctx = RecommendationContext()
+    actions = RecommendationEngine().recommend(ctx)
+    assert not any("AI-readable" in a.title for a in actions)
+
+
+# ---------------------------------------------------------------------------
+# Service-bus-factor enrichment with service_top_files (0.0.5c)
+
+def test_service_bus_factor_includes_start_with_when_top_file_provided():
+    svc = _service("payment", 8, "alice@x.com", 0.85)
+    ctx = RecommendationContext(
+        services=(svc,),
+        service_top_files={"payment": "src/payment/checkout.py"},
+    )
+    actions = RecommendationEngine().recommend(ctx)
+    a = next(a for a in actions if a.category == ActionCategory.OWNERSHIP_DIVERSIFICATION)
+    assert "Start with: src/payment/checkout.py" in a.description
+    assert "top_file=src/payment/checkout.py" in a.evidence
+
+
+def test_service_bus_factor_omits_start_with_when_no_top_file():
+    svc = _service("payment", 8, "alice@x.com", 0.85)
+    ctx = RecommendationContext(services=(svc,))  # no service_top_files
+    actions = RecommendationEngine().recommend(ctx)
+    a = next(a for a in actions if a.category == ActionCategory.OWNERSHIP_DIVERSIFICATION)
+    assert "Start with:" not in a.description
+    assert "top_file=" not in a.evidence

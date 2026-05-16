@@ -9,12 +9,6 @@ from rich.table import Table
 
 from blindspot import __version__
 from blindspot.actions import RecommendationContext, RecommendationEngine
-from blindspot.ai_signal import (
-    AIAmplificationDetector,
-    AuthorProfile,
-    AuthorProfiler,
-    QualitySignalEngine,
-)
 from blindspot.codeowners import (
     CodeOwnersValidator,
     find_codeowners_file,
@@ -48,6 +42,7 @@ from blindspot.dependency_graph import (
     top_n as central_top_n,
 )
 from blindspot.dependency_graph.builder import auto_detect_code_root
+from blindspot.risk_models.bus_factor import top_level_dir
 from blindspot.diff_analysis import DiffChurnSummary, classify_file, summarise
 from blindspot.narrative import (
     NarrativeConfigError,
@@ -66,7 +61,9 @@ from blindspot.report import (
 from blindspot.resilience import ResilienceScoreEngine
 from blindspot.review_graph import ReviewGraph, ReviewGraphBuilder
 from blindspot.risk_models import (
+    AIReadinessEngine,
     BusFactorEngine,
+    CorrectionLoadEngine,
     DepartureSimulation,
     KnowledgeDecayEngine,
 )
@@ -79,6 +76,53 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+
+
+def _resolve_service_prefix(repo_path: Path, code_root: str) -> str:
+    """Resolve the effective directory prefix to strip before deciding a
+    file's service.
+
+    When ``code_root`` looks like a source root that contains exactly one
+    Python-package-style directory (e.g. ``src/`` contains only
+    ``blindspot/``), the package directory is appended to the prefix so a
+    single-package layout doesn't collapse into one giant service. With
+    multiple packages under the source root, the prefix stays at the root.
+    """
+    if not code_root or code_root == ".":
+        return ""
+    base = repo_path / code_root
+    try:
+        children = [
+            p for p in base.iterdir()
+            if p.is_dir() and not p.name.startswith((".", "_"))
+            and p.name not in {"tests", "test", "__pycache__"}
+        ]
+    except (OSError, FileNotFoundError):
+        return code_root.rstrip("/")
+    if len(children) == 1:
+        return f"{code_root.rstrip('/')}/{children[0].name}"
+    return code_root.rstrip("/")
+
+
+def _build_service_of(prefix: str):
+    """Return a ``service_of(path) -> service`` function aware of a prefix.
+
+    When ``prefix`` is empty, falls back to ``top_level_dir`` (path's first
+    segment). When a prefix is provided (e.g. ``"src/blindspot"``), paths
+    under it are stripped first so the *service* is the first directory
+    **inside** that prefix. This stops a Python package collapsing into a
+    single "src" or "blindspot" pseudo-service.
+    """
+    if not prefix:
+        return top_level_dir
+    p = prefix.rstrip("/") + "/"
+
+    def service_of(path: str) -> str:
+        if path.startswith(p):
+            return top_level_dir(path[len(p):])
+        return top_level_dir(path)
+
+    return service_of
 
 
 def _is_alertable(path: str, file_filter: FileFilter) -> bool:
@@ -144,11 +188,6 @@ def scan(
         help="Bitbucket Cloud app password with pullrequest:read + "
         "repository:read scopes (overrides .blindspot.yaml).",
     ),
-    experimental_ai_signal: bool = typer.Option(
-        False,
-        "--experimental-ai-signal",
-        help="EXPERIMENTAL: classify authors by AI amplification + quality signals.",
-    ),
     check_codeowners: bool = typer.Option(
         True,
         "--check-codeowners/--no-check-codeowners",
@@ -176,9 +215,16 @@ def scan(
         help="PageRank threshold below which files are excluded from recommendations.",
     ),
     simulate_top_departures: int = typer.Option(
-        6, "--simulate-top-departures",
+        3, "--simulate-top-departures",
         help="Add 'what-if' departure scenarios to the report for the top-N "
         "contributors by aggregate ownership coverage. Set to 0 to disable.",
+    ),
+    simulate_departures: str = typer.Option(
+        "", "--simulate-departures",
+        help="Add a single multi-person 'what-if' departure scenario to the "
+        "report. Comma-separated emails. Example: "
+        '--simulate-departures "alice@x.com,bob@x.com,carol@x.com" — '
+        "renders one combined card on top of the top-N scenarios.",
     ),
     narrative_lang: str = typer.Option(
         "en",
@@ -340,6 +386,22 @@ def scan(
 
     file_filter = FileFilter.from_repo(path)
 
+    # Service definition: when a code root is detected (e.g. "src" or
+    # "src/blindspot"), use the first directory *inside* it as the service
+    # so a Python package isn't collapsed into one giant "src" service.
+    resolved_code_root = (
+        code_root.strip()
+        if code_root.strip()
+        else auto_detect_code_root(path)
+    )
+    service_prefix = _resolve_service_prefix(path, resolved_code_root)
+    service_of = _build_service_of(service_prefix)
+    if service_prefix:
+        console.print(
+            f"  Service root: [bold]{service_prefix}/[/bold] "
+            f"(use --code-root to override)"
+        )
+
     importance_map: dict[str, float] = {}
     top_central: tuple = ()
     top_central_models: tuple = ()
@@ -347,18 +409,6 @@ def scan(
     if not no_dependency_graph:
         try:
             console.print("Building file dependency graph…")
-            # User flag wins; otherwise auto-detect prefers src/ then lib/.
-            resolved_code_root = (
-                code_root.strip()
-                if code_root.strip()
-                else auto_detect_code_root(path)
-            )
-            if resolved_code_root and resolved_code_root != ".":
-                console.print(
-                    f"  Dependency graph scope: [bold]{resolved_code_root}/[/bold] "
-                    f"(use --code-root to override, --include-tests-in-graph to "
-                    f"include tests/examples/docs)"
-                )
             graph = DependencyGraphBuilder(
                 file_filter=file_filter,
                 code_root=resolved_code_root if resolved_code_root != "." else "",
@@ -429,7 +479,7 @@ def scan(
         except Exception as e:
             console.print(f"[yellow]Dependency graph skipped:[/yellow] {e}")
 
-    services = bus_factor.for_services(ownership)
+    services = bus_factor.for_services(ownership, service_of=service_of)
     file_bf = bus_factor.for_files(ownership)
     critical_files = [
         f for f in file_bf
@@ -443,7 +493,7 @@ def scan(
         if _is_alertable(d.file, file_filter)
         and _passes_importance(d.file, importance_map, importance_threshold)
     ]
-    decay_services = decay_engine.for_services(commits, ownership)
+    decay_services = decay_engine.for_services(commits, ownership, service_of=service_of)
 
     if services:
         svc_table = Table(title="Service risk (bus factor)")
@@ -521,65 +571,13 @@ def scan(
             mix_table.add_row(cat.value, str(count), f"{share:.0%}")
         console.print(mix_table)
 
-    author_profiles: tuple[AuthorProfile, ...] = ()
-    if experimental_ai_signal:
-        console.print(
-            "\n[yellow]experimental:[/yellow] computing AI amplification + quality signals "
-            "(heuristic — verify before action)…"
-        )
-        ai_signals = AIAmplificationDetector().detect(commits)
-        quality_signals = QualitySignalEngine().assess(
-            commits, prs=prs if reviews_enabled else None
-        )
-        profiles_by_email = AuthorProfiler().profile(commits, ai_signals, quality_signals)
-        sort_order = {
-            "Fake Velocity": 0,
-            "AI Amplified Healthy": 1,
-            "Real Growth": 2,
-            "Insufficient Data": 3,
-            "Bot": 4,
-        }
-        author_profiles = tuple(
-            sorted(
-                profiles_by_email.values(),
-                key=lambda p: (
-                    sort_order.get(p.profile_type.value, 5),
-                    -p.ai_signal.score if p.ai_signal else 0,
-                ),
-            )
-        )
-        if author_profiles:
-            profile_color = {
-                "Fake Velocity": "red",
-                "AI Amplified Healthy": "yellow",
-                "Real Growth": "green",
-                "Bot": "cyan",
-                "Insufficient Data": "dim",
-            }
-            ai_table = Table(title="Author signal profiles (experimental)")
-            ai_table.add_column("Author")
-            ai_table.add_column("Profile")
-            ai_table.add_column("AI flag")
-            ai_table.add_column("Quality risk", justify="right")
-            ai_table.add_column("Signal strength")
-            for p in author_profiles:
-                color = profile_color[p.profile_type.value]
-                ai_flag = p.ai_signal.flag.value if p.ai_signal else "-"
-                quality = f"{p.quality_signal.risk_score:.0%}" if p.quality_signal else "-"
-                ai_table.add_row(
-                    ownership.label_for(p.author_email),
-                    f"[{color}]{p.profile_type.value}[/{color}]",
-                    ai_flag,
-                    quality,
-                    p.signal_strength.value,
-                )
-            console.print(ai_table)
+    correction_report = CorrectionLoadEngine().compute(commits)
+    ai_readiness = AIReadinessEngine().detect(files)
 
     resilience = ResilienceScoreEngine().compute(
         services,
         decays,
         review_stats=review_graph.file_stats if review_graph is not None else None,
-        author_profiles={p.author_email: p for p in author_profiles} if author_profiles else None,
     )
     band_color = {
         "Strong": "green",
@@ -592,7 +590,6 @@ def scan(
         ("Ownership", resilience.ownership),
         ("Decay", resilience.decay),
         ("Review", resilience.review),
-        ("Activity", resilience.activity),
     ):
         sub_parts.append(f"{label}: {val if val is not None else '—'}")
     panel_body = (
@@ -674,6 +671,22 @@ def scan(
             )
 
     departure_scenarios: tuple[DepartureReport, ...] = ()
+    sim = DepartureSimulation()
+
+    multi_person_scenario: DepartureReport | None = None
+    if simulate_departures and ownership.scores:
+        multi_emails = [
+            e.strip() for e in simulate_departures.split(",") if e.strip()
+        ]
+        if multi_emails:
+            multi_person_scenario = sim.simulate(
+                ownership, multi_emails, service_of=service_of
+            )
+            console.print(
+                f"Simulating multi-person departure: "
+                f"[bold]{', '.join(multi_emails)}[/bold]"
+            )
+
     if simulate_top_departures > 0 and ownership.scores:
         by_author_cov: dict[str, float] = {}
         for s in ownership.scores:
@@ -683,13 +696,20 @@ def scan(
         top_emails = [
             email for email, _ in sorted(by_author_cov.items(), key=lambda kv: -kv[1])
         ][:simulate_top_departures]
-        sim = DepartureSimulation()
-        departure_scenarios = tuple(sim.simulate(ownership, [email]) for email in top_emails)
+        single_scenarios = tuple(
+            sim.simulate(ownership, [email], service_of=service_of)
+            for email in top_emails
+        )
         console.print(
-            f"Simulating departure of top {len(departure_scenarios)} "
-            f"contributor{'s' if len(departure_scenarios) != 1 else ''} "
+            f"Simulating departure of top {len(single_scenarios)} "
+            f"contributor{'s' if len(single_scenarios) != 1 else ''} "
             f"by aggregate coverage…"
         )
+        departure_scenarios = single_scenarios
+
+    # Multi-person scenario goes first (user-requested, more prominent).
+    if multi_person_scenario is not None:
+        departure_scenarios = (multi_person_scenario,) + departure_scenarios
 
     ctx = ReportContext(
         repo_path=str(path.resolve()),
@@ -713,8 +733,6 @@ def scan(
         top_rubber_stamps=top_rubber,
         low_diversity_files=low_div,
         diff_summary=diff_summary,
-        ai_signal_enabled=experimental_ai_signal,
-        author_profiles=author_profiles,
         recommendations=(),
         resilience=resilience,
         trend=trend,
@@ -723,17 +741,37 @@ def scan(
         module_graph=module_graph,
         top_central_models=top_central_models,
         departure_scenarios=departure_scenarios,
+        correction_load_authors=correction_report.authors,
+        correction_load_files=correction_report.files,
+        ai_readiness=ai_readiness,
     )
+
+    # Per-service: highest-importance code file (or fallback to highest-
+    # coverage critical file). Lets the diversification recommendation say
+    # "start with X" instead of just naming the whole service.
+    service_top_files: dict[str, str] = {}
+    for cf in critical_files:
+        svc = service_of(cf.file)
+        if svc not in service_top_files:
+            service_top_files[svc] = cf.file
+            continue
+        # Prefer the file with the higher importance weight.
+        cur = service_top_files[svc]
+        if importance_map.get(cf.file, 0.0) > importance_map.get(cur, 0.0):
+            service_top_files[svc] = cf.file
 
     rec_ctx = RecommendationContext(
         services=tuple(services),
         critical_files=tuple(critical_files),
         decays=tuple(decays),
         review_stats=(review_graph.file_stats if review_graph is not None else {}),
-        author_profiles={p.author_email: p for p in author_profiles},
         ownership_names=dict(ownership.names),
         codeowners_report=codeowners_report,
         importance_map=importance_map,
+        correction_load_authors=correction_report.authors,
+        correction_load_files=correction_report.files,
+        ai_readiness=ai_readiness,
+        service_top_files=service_top_files,
     )
     recommendations = tuple(
         RecommendationEngine(importance_threshold=importance_threshold).recommend(rec_ctx)

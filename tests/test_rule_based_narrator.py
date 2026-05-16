@@ -9,13 +9,6 @@ from blindspot.actions.models import (
     FragilityPattern,
     RecommendedAction,
 )
-from blindspot.ai_signal.models import (
-    AIFlag,
-    AISignal,
-    AuthorProfile,
-    AuthorProfileType,
-    SignalStrength,
-)
 from blindspot.narrative.rule_based import RuleBasedNarrator
 from blindspot.report.context import ReportContext
 from blindspot.resilience.score import ResilienceScore
@@ -108,34 +101,12 @@ def test_headline_review_for_rubber_stamp():
     assert "85" in nr.headline_action
 
 
-def test_headline_velocity_for_fake_velocity_author():
-    profile = AuthorProfile(
-        author_email="risky@x.com",
-        author_name="Risky Dev",
-        profile_type=AuthorProfileType.FAKE_VELOCITY,
-        signal_strength=SignalStrength.LOW,
-        evidence_weight=0.6,
-        ai_signal=AISignal(
-            author_email="risky@x.com", flag=AIFlag.HIGH, score=0.85,
-            frequency_score=1.0, volume_score=1.0, message_score=0.6,
-            large_commit_score=0.6, timing_score=0.4,
-            recent_commits=30, baseline_commits=20,
-        ),
-        quality_signal=None,
-        explanation="…",
-    )
-    ctx = _empty_ctx(author_profiles=(profile,))
-    nr = RuleBasedNarrator(language="en").summarize(ctx)
-    assert "Risky Dev" in nr.headline_action
-
-
 def test_executive_summary_includes_resilience_band():
     score = ResilienceScore(
         overall=42,
         ownership=30,
         decay=50,
         review=60,
-        activity=None,
         band="Fragile",
         summary="…",
     )
@@ -149,7 +120,7 @@ def test_executive_summary_includes_resilience_band():
 
 def test_turkish_language_uses_tr_labels():
     score = ResilienceScore(
-        overall=42, ownership=30, decay=50, review=60, activity=None,
+        overall=42, ownership=30, decay=50, review=60,
         band="Fragile", summary="…",
     )
     ctx = _empty_ctx(resilience=score)
@@ -183,3 +154,46 @@ def test_rationales_built_per_recommendation():
     assert "payment" in nr.rationales
     assert "Alice" in nr.rationales["payment"]
     assert "85" in nr.rationales["payment"]
+
+
+# ---------------------------------------------------------------------------
+# 0.0.5a — risk inventory + headline for U1/U2
+
+def test_risk_counts_include_correction_load_count():
+    from blindspot.risk_models.correction_load import FileCorrectionLoad
+    f = FileCorrectionLoad(
+        file="src/hot.py", total_commits=20, fix_commits=8,
+        revert_commits=2, correction_ratio=0.5, risk_level="critical",
+    )
+    ctx = _empty_ctx(correction_load_files=(f,))
+    nr = RuleBasedNarrator(language="en").summarize(ctx)
+    assert "correction load" in nr.executive_summary.lower()
+
+
+def test_risk_counts_include_ai_readiness_gap():
+    from blindspot.risk_models.ai_readiness import (
+        AIReadinessCoverage, AIReadinessReport,
+    )
+    report = AIReadinessReport(
+        repo=AIReadinessCoverage(target="(repo)", agent_rules=False, specs=False,
+                                 prompts=False, architecture=False, skills=False),
+        services=(
+            AIReadinessCoverage(target="payment", agent_rules=False, specs=False,
+                                prompts=False, architecture=False, skills=False),
+        ),
+    )
+    ctx = _empty_ctx(ai_readiness=report)
+    nr = RuleBasedNarrator(language="en").summarize(ctx)
+    assert "AI-readable" in nr.executive_summary
+
+
+def test_headline_correction_load_when_no_higher_priority():
+    from blindspot.risk_models.correction_load import FileCorrectionLoad
+    f = FileCorrectionLoad(
+        file="src/hot.py", total_commits=20, fix_commits=8,
+        revert_commits=2, correction_ratio=0.5, risk_level="critical",
+    )
+    ctx = _empty_ctx(correction_load_files=(f,))
+    nr = RuleBasedNarrator(language="en").summarize(ctx)
+    assert "src/hot.py" in nr.headline_action
+    assert "50" in nr.headline_action

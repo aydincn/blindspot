@@ -2,14 +2,18 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from blindspot.actions import RecommendedAction
-from blindspot.ai_signal.models import AuthorProfile
 from blindspot.codeowners import CodeOwnersReport
 from blindspot.dependency_graph import CentralFile, CentralModel, ModuleGraph
 from blindspot.diff_analysis import DiffChurnSummary
 from blindspot.narrative import DepartureNarrative, NarrativeReport
 from blindspot.resilience import ResilienceScore
 from blindspot.review_graph.engine import FileReviewStats
+from blindspot.risk_models.ai_readiness import AIReadinessReport
 from blindspot.risk_models.bus_factor import FileBusFactor, ServiceBusFactor
+from blindspot.risk_models.correction_load import (
+    AuthorCorrectionLoad,
+    FileCorrectionLoad,
+)
 from blindspot.risk_models.departure import DepartureReport
 from blindspot.risk_models.knowledge_decay import FileDecay, ServiceDecay
 from blindspot.trend import ResilienceTrend
@@ -41,8 +45,6 @@ class ReportContext:
     top_rubber_stamps: tuple[FileReviewStats, ...] = ()
     low_diversity_files: tuple[FileReviewStats, ...] = ()
     diff_summary: DiffChurnSummary | None = None
-    ai_signal_enabled: bool = False
-    author_profiles: tuple[AuthorProfile, ...] = ()
     recommendations: tuple[RecommendedAction, ...] = ()
     resilience: ResilienceScore | None = None
     trend: ResilienceTrend | None = None
@@ -52,6 +54,9 @@ class ReportContext:
     module_graph: ModuleGraph | None = None
     top_central_models: tuple[CentralModel, ...] = ()
     departure_scenarios: tuple[DepartureReport, ...] = ()
+    correction_load_authors: tuple[AuthorCorrectionLoad, ...] = ()
+    correction_load_files: tuple[FileCorrectionLoad, ...] = ()
+    ai_readiness: AIReadinessReport | None = None
 
     def label(self, email: str) -> str:
         name = self.names.get(email)

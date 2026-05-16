@@ -134,6 +134,48 @@ def test_renders_html_with_expected_sections(make_repo):
     assert __version__ in html
 
 
+def test_report_renders_four_group_headers(make_repo):
+    """0.0.5a hygiene pass — sections grouped under 4 h1 headers."""
+    repo = make_repo(
+        [
+            CommitSpec("Alice", "alice@x.com", "payment/main.py", "1\n", 5),
+            CommitSpec("Bob", "bob@x.com", "shared/util.py", "2\n", 4),
+        ]
+    )
+    ctx = _build_context(repo)
+    html = ReportRenderer().render(ctx)
+
+    assert 'class="group-title"' in html
+    assert "TL;DR" in html
+    assert "People &amp; Ownership" in html
+    assert "Knowledge State" in html
+    assert "Process Quality" in html
+    # Exactly 4 group headers (we don't want accidental duplication).
+    assert html.count('<h1 class="group-title">') == 4
+
+
+def test_removed_low_signal_sections_are_absent(make_repo):
+    """0.0.5a hygiene pass + 0.0.5c finalisation — these sections were
+    intentionally removed from the HTML report. Engines still compute the
+    data and the recommendation rules still fire; only the display was
+    dropped."""
+    repo = make_repo(
+        [
+            CommitSpec("Alice", "alice@x.com", "payment/main.py", "1\n", 5),
+            CommitSpec("Bob", "bob@x.com", "shared/util.py", "2\n", 4),
+        ]
+    )
+    ctx = _build_context(repo)
+    html = ReportRenderer().render(ctx)
+
+    assert "Activity summary" not in html
+    assert "Central models" not in html
+    assert "Structural backbone" not in html
+    assert "PR activity mix" not in html
+    assert "Top churned files" not in html
+    assert "CODEOWNERS validation" not in html
+
+
 def test_renders_empty_repo_gracefully(make_repo):
     repo = make_repo([])
     ctx = _build_context(repo)

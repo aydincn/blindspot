@@ -107,7 +107,6 @@ def _structured_payload(ctx: "ReportContext") -> dict[str, Any]:
             "ownership": ctx.resilience.ownership,
             "decay": ctx.resilience.decay,
             "review": ctx.resilience.review,
-            "activity": ctx.resilience.activity,
             "summary": ctx.resilience.summary,
         }
     # Top services by risk (max 5)
@@ -166,11 +165,6 @@ def _structured_payload(ctx: "ReportContext") -> dict[str, Any]:
             "orphan": len(ctx.codeowners.orphans),
             "team_only": len(ctx.codeowners.team_only),
         }
-    # Author profile summary (counts only, no names)
-    if ctx.author_profiles:
-        from collections import Counter
-        counts = Counter(p.profile_type.value for p in ctx.author_profiles)
-        out["author_profile_counts"] = dict(counts)
     # Structural backbone — top central files (max 5)
     if ctx.top_central_files:
         out["top_central_files"] = [

@@ -31,6 +31,17 @@ header .meta { margin: 0; color: var(--muted); font-size: 13px; }
 header .meta code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
 section { margin-bottom: 40px; }
 h2 { font-size: 18px; font-weight: 600; margin: 0 0 16px; letter-spacing: -0.01em; }
+.group-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 48px 0 20px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--accent);
+}
+.group-title:first-of-type { margin-top: 24px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
 .card {
   background: var(--card);
@@ -68,6 +79,27 @@ footer p { margin: 4px 0; }
 .band-fragile { color: var(--high); border-left-color: var(--high); }
 .band-critical { color: var(--critical); border-left-color: var(--critical); }
 .resilience .summary { color: var(--muted); font-size: 13px; margin: 4px 2px 0; }
+.letter-grade {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-size: 20px;
+  font-weight: 700;
+  background: rgba(15, 23, 42, 0.04);
+  vertical-align: middle;
+}
+.letter-grade-sub {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 13px;
+  font-weight: 700;
+  background: rgba(15, 23, 42, 0.05);
+  color: var(--muted);
+  vertical-align: middle;
+}
 .narrative { background: linear-gradient(180deg, #f0f9ff 0%, #ffffff 100%); border: 1px solid #bae6fd; border-radius: 10px; padding: 24px 28px; margin-bottom: 32px; }
 .narrative .eyebrow { color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 6px; }
 .narrative .headline { font-size: 18px; font-weight: 600; line-height: 1.4; margin: 0 0 14px; color: var(--fg); }
@@ -99,6 +131,9 @@ footer p { margin: 4px 0; }
 .departure-stat .value.v-crit { color: var(--critical); }
 .departure-services .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
 .departure-services ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.departure-card-multi { grid-column: 1 / -1; border-color: var(--accent); border-width: 2px; }
+.departure-people { display: flex; flex-wrap: wrap; gap: 6px; }
+.departure-pill { background: #eef2ff; color: #4338ca; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; }
 .muted-suffix { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 4px; }
 .pattern-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; background: #eef2ff; color: #4338ca; margin-right: 6px; }
 .upgrade-hint { margin-top: 14px; padding: 10px 14px; background: rgba(15, 23, 42, 0.04); border-left: 3px solid var(--muted); border-radius: 4px; font-size: 12.5px; color: var(--muted); }
@@ -109,6 +144,18 @@ footer p { margin: 4px 0; }
 .notice-box strong { color: #7c2d12; }
 .notice-box code { background: rgba(124, 45, 18, 0.08); padding: 1px 5px; border-radius: 3px; font-size: 12px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 .notice-box pre { background: rgba(124, 45, 18, 0.08); padding: 8px 10px; border-radius: 4px; font-size: 12px; margin: 6px 0; overflow-x: auto; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: #7c2d12; }
+details.architecture-details { margin-top: 24px; }
+details.architecture-details summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+details.architecture-details[open] summary { color: var(--accent); }
 </style>
 {% if ctx.module_graph and ctx.module_graph.edges %}
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
@@ -155,6 +202,8 @@ footer p { margin: 4px 0; }
 </div>
 {% endif %}
 
+<h1 class="group-title">TL;DR — Resilience score, top actions, trend</h1>
+
 {% if ctx.resilience %}
 {% set band_class = "band-" ~ ctx.resilience.band | lower %}
 <section>
@@ -162,14 +211,18 @@ footer p { margin: 4px 0; }
   <div class="resilience">
     <div class="overall">
       <div class="label">Overall</div>
-      <div class="score {{ band_class }}">{{ ctx.resilience.overall }}<span style="font-size:22px;color:var(--muted);font-weight:500;">/100</span></div>
+      <div class="score {{ band_class }}">{{ ctx.resilience.overall }}<span style="font-size:22px;color:var(--muted);font-weight:500;">/100</span> <span class="letter-grade {{ band_class }}" title="Letter grade for the overall score">{{ ctx.resilience.overall_grade }}</span></div>
       <div class="band {{ band_class }}">{{ ctx.resilience.band }}</div>
     </div>
     <div class="subs">
-      {% for label, val in [("Ownership", ctx.resilience.ownership), ("Decay", ctx.resilience.decay), ("Review", ctx.resilience.review), ("Activity", ctx.resilience.activity)] %}
+      {% for label, val, grade in [
+        ("Ownership", ctx.resilience.ownership, ctx.resilience.ownership_grade),
+        ("Decay", ctx.resilience.decay, ctx.resilience.decay_grade),
+        ("Review", ctx.resilience.review, ctx.resilience.review_grade)
+      ] %}
       <div class="sub {% if val is none %}{% elif val >= 80 %}band-strong{% elif val >= 60 %}band-moderate{% elif val >= 40 %}band-fragile{% else %}band-critical{% endif %}">
         <div class="label">{{ label }}</div>
-        <div class="value">{% if val is none %}<span style="color:var(--muted);font-size:16px;font-weight:400;">no data</span>{% else %}{{ val }}{% endif %}</div>
+        <div class="value">{% if val is none %}<span style="color:var(--muted);font-size:16px;font-weight:400;">no data</span>{% else %}{{ val }} <span class="letter-grade-sub">{{ grade }}</span>{% endif %}</div>
       </div>
       {% endfor %}
     </div>
@@ -178,149 +231,46 @@ footer p { margin: 4px 0; }
 </section>
 {% endif %}
 
-{% if ctx.departure_scenarios %}
+{% if ctx.recommendations %}
 <section>
-  <h2>Departure scenarios — what we lose if one person leaves</h2>
+  <h2>Recommended actions</h2>
   <p class="note">
-    For each of the top contributors by aggregate ownership coverage, this
-    is what would happen if they left tomorrow: how many files lose their
-    primary expert, how many become unowned (orphan, top remaining
-    coverage &lt; 30%), and which services take the largest hit. Use this
-    to prioritise pair-work and knowledge transfer.
-  </p>
-  <div class="departure-grid">
-    {% for scenario in ctx.departure_scenarios %}
-    {% set who = scenario.departing[0] if scenario.departing else "" %}
-    {% set svc_top = scenario.services[:3] %}
-    {% set orphan_pct = (scenario.orphaned_files / scenario.total_files) if scenario.total_files else 0 %}
-    {% set sev = "critical" if scenario.orphaned_files > 0 else ("high" if scenario.avg_coverage_loss > 0.30 else "medium") %}
-    <div class="departure-card">
-      <div class="departure-who">
-        <span class="badge {{ sev }}">{{ sev | upper }}</span>
-        <strong>If {{ ctx.label(who) }} leaves</strong>
-      </div>
-      <div class="departure-stats">
-        <div class="departure-stat">
-          <div class="label">Files affected</div>
-          <div class="value">{{ scenario.affected_files }}<span class="muted-suffix"> / {{ scenario.total_files }}</span></div>
-        </div>
-        <div class="departure-stat">
-          <div class="label">Orphan files</div>
-          <div class="value{% if scenario.orphaned_files %} v-crit{% endif %}">{{ scenario.orphaned_files }}<span class="muted-suffix"> ({{ orphan_pct | pct }})</span></div>
-        </div>
-        <div class="departure-stat">
-          <div class="label">Avg coverage loss</div>
-          <div class="value">{{ scenario.avg_coverage_loss | pct }}</div>
-        </div>
-      </div>
-      {% if svc_top %}
-      <div class="departure-services">
-        <div class="label">Most-affected services</div>
-        <ul>
-        {% for s in svc_top %}
-          <li>
-            <code class="path">{{ s.service }}</code>
-            <span class="muted-suffix">{{ s.affected_files }}/{{ s.file_count }} files
-              {%- if s.orphaned_files %}, {{ s.orphaned_files }} orphan{%- endif -%}
-              , {{ s.avg_coverage_loss | pct }} avg loss</span>
-          </li>
-        {% endfor %}
-        </ul>
-      </div>
-      {% endif %}
-    </div>
-    {% endfor %}
-  </div>
-</section>
-{% endif %}
-
-{% if ctx.top_central_models %}
-<section>
-  <h2>Central models — structural types other code is bound to</h2>
-  <p class="note">
-    Files that define data-model classes (dataclasses, pydantic
-    <code>BaseModel</code>, attrs, msgspec, TypedDict) which other files
-    in the repo import. A high <strong>dependents</strong> count means
-    many call sites are coupled to this type; breaking changes here ripple.
-    Sole-owner concentration on these files is a stronger warning than
-    on regular code.
+    Concrete next steps derived from the signals in this report.
+    Each action is tied to a specific finding — treat them as conversation starters
+    with the team, not directives.
   </p>
   <table>
     <thead><tr>
-      <th>File</th>
-      <th class="num">Model classes</th>
-      <th class="num">Dependents</th>
-      <th>Top owner</th>
-      <th class="num">Their coverage</th>
+      <th>Priority</th>
+      <th>Category</th>
+      <th>Title</th>
+      <th>Target</th>
+      <th>Evidence</th>
     </tr></thead>
     <tbody>
-    {% for m in ctx.top_central_models %}
+    {% for a in ctx.recommendations %}
       <tr>
-        <td><code class="path">{{ m.file }}</code></td>
-        <td class="num">{{ m.model_class_count }}</td>
-        <td class="num">{{ m.dependents }}</td>
-        <td>{% if m.top_owner %}{{ ctx.label(m.top_owner) }}{% else %}—{% endif %}</td>
-        <td class="num">{% if m.top_owner %}{{ m.top_owner_coverage | pct }}{% else %}—{% endif %}</td>
+        <td>
+          {% set prio_color = ({"High": "critical", "Medium": "high", "Low": "medium"})[a.priority.value] %}
+          <span class="badge {{ prio_color }}">{{ a.priority.value }}</span>
+        </td>
+        <td>{{ a.category.value }}</td>
+        <td>
+          {% if a.pattern %}
+          <span class="pattern-badge" title="Recurring fragility pattern">{{ a.pattern.value }}</span>
+          {% endif %}
+          <strong>{{ a.title }}</strong>
+          <div style="margin-top:4px;color:var(--muted);font-size:13px;">{{ a.description }}</div>
+          {% if ctx.narrative and ctx.narrative.rationales.get(a.target) %}
+          <span class="rationale">▸ {{ ctx.narrative.rationales[a.target] }}</span>
+          {% endif %}
+        </td>
+        <td><code class="path">{{ a.target }}</code></td>
+        <td style="font-size:12px;color:var(--muted);font-family:ui-monospace,monospace;">{{ a.evidence }}</td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
-</section>
-{% endif %}
-
-{% if ctx.top_central_files %}
-<section>
-  <h2>Structural backbone — top central files</h2>
-  <p class="note">
-    PageRank over the file dependency graph: these are the files most other
-    files transitively depend on. Weak ownership or decay here is more
-    impactful than on leaf files. Recommendations are filtered to exclude
-    files below the importance threshold, so low-impact files (one-shot
-    bootstrap scripts, leaf utilities) don't generate noisy alerts.
-  </p>
-  <table>
-    <thead><tr>
-      <th>File</th>
-      <th class="num">Importance</th>
-      <th class="num">Dependents</th>
-      <th>Top owner</th>
-      <th class="num">Their coverage</th>
-    </tr></thead>
-    <tbody>
-    {% for cf in ctx.top_central_files %}
-      <tr>
-        <td><code class="path">{{ cf.file }}</code></td>
-        <td class="num">{{ (cf.importance * 100) | round(2) }}%</td>
-        <td class="num">{{ cf.in_degree }}</td>
-        <td>{% if cf.top_owner %}{{ ctx.label(cf.top_owner) }}{% else %}—{% endif %}</td>
-        <td class="num">{% if cf.top_owner %}{{ cf.top_owner_coverage | pct }}{% else %}—{% endif %}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</section>
-{% endif %}
-
-{% if ctx.module_graph and ctx.module_graph.edges %}
-<section>
-  <h2>Module dependency map</h2>
-  <p class="note">
-    Top-level directories rolled up from the file dependency graph. Each
-    node is a module ({{ ctx.module_graph.nodes | length }} shown, ranked by
-    total connection weight); each edge is the count of file-level imports
-    crossing between them. Arrows point from caller to callee.
-  </p>
-  <div class="mermaid-wrap">
-    <pre class="mermaid">
-graph LR
-{% for n in ctx.module_graph.nodes -%}
-  m_{{ n.name | replace('/', '_') | replace('-', '_') | replace('.', '_') | replace('(', '') | replace(')', '') }}["{{ n.name }}<br/>{{ n.file_count }} file{% if n.file_count != 1 %}s{% endif %}"]
-{% endfor -%}
-{% for e in ctx.module_graph.edges -%}
-  m_{{ e.from_module | replace('/', '_') | replace('-', '_') | replace('.', '_') | replace('(', '') | replace(')', '') }} -->|{{ e.weight }}| m_{{ e.to_module | replace('/', '_') | replace('-', '_') | replace('.', '_') | replace('(', '') | replace(')', '') }}
-{% endfor -%}
-    </pre>
-  </div>
 </section>
 {% endif %}
 
@@ -328,8 +278,8 @@ graph LR
 <section>
   <h2>Resilience trend</h2>
   <p class="note">
-    Historical snapshots based on ownership + decay (review and activity sub-scores
-    only apply to the present). Use this to see whether resilience is trending up
+    Historical snapshots based on ownership + decay (review sub-score
+    only applies to the present). Use this to see whether resilience is trending up
     or down over the window.
   </p>
   <table>
@@ -374,16 +324,7 @@ graph LR
 </section>
 {% endif %}
 
-<section>
-  <h2>Activity summary</h2>
-  <div class="cards">
-    <div class="card"><div class="label">Commits</div><div class="value">{{ ctx.commit_count }}</div></div>
-    <div class="card"><div class="label">Unique authors</div><div class="value">{{ ctx.author_count }}</div></div>
-    <div class="card"><div class="label">Files touched</div><div class="value">{{ ctx.file_count }}</div></div>
-    <div class="card"><div class="label">Lines added</div><div class="value">{{ ctx.additions }}</div></div>
-    <div class="card"><div class="label">Lines deleted</div><div class="value">{{ ctx.deletions }}</div></div>
-  </div>
-</section>
+<h1 class="group-title">People &amp; Ownership</h1>
 
 <section>
   <h2>Service risk map</h2>
@@ -437,6 +378,147 @@ graph LR
   <div class="empty">No critical single-owner files detected.</div>
   {% endif %}
 </section>
+
+{% if ctx.departure_scenarios %}
+<section>
+  <h2>Departure scenarios — what we lose if one person leaves</h2>
+  <p class="note">
+    For each of the top contributors by aggregate ownership coverage, this
+    is what would happen if they left tomorrow: how many files lose their
+    primary expert, how many become unowned (orphan, top remaining
+    coverage &lt; 30%), and which services take the largest hit. Use this
+    to prioritise pair-work and knowledge transfer.
+  </p>
+  <div class="departure-grid">
+    {% for scenario in ctx.departure_scenarios %}
+    {% set svc_top = scenario.services[:3] %}
+    {% set orphan_pct = (scenario.orphaned_files / scenario.total_files) if scenario.total_files else 0 %}
+    {% set sev = "critical" if scenario.orphaned_files > 0 else ("high" if scenario.avg_coverage_loss > 0.30 else "medium") %}
+    {% set is_multi = scenario.departing | length > 1 %}
+    <div class="departure-card{% if is_multi %} departure-card-multi{% endif %}">
+      <div class="departure-who">
+        <span class="badge {{ sev }}">{{ sev | upper }}</span>
+        {% if is_multi %}
+        <strong>If {{ scenario.departing | length }} people leave together</strong>
+        {% else %}
+        <strong>If {{ ctx.label(scenario.departing[0]) }} leaves</strong>
+        {% endif %}
+      </div>
+      {% if is_multi %}
+      <div class="departure-people">
+        {% for email in scenario.departing %}
+          <span class="departure-pill">{{ ctx.label(email) }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <div class="departure-stats">
+        <div class="departure-stat">
+          <div class="label">Files affected</div>
+          <div class="value">{{ scenario.affected_files }}<span class="muted-suffix"> / {{ scenario.total_files }}</span></div>
+        </div>
+        <div class="departure-stat">
+          <div class="label">Orphan files</div>
+          <div class="value{% if scenario.orphaned_files %} v-crit{% endif %}">{{ scenario.orphaned_files }}<span class="muted-suffix"> ({{ orphan_pct | pct }})</span></div>
+        </div>
+        <div class="departure-stat">
+          <div class="label">Avg coverage loss</div>
+          <div class="value">{{ scenario.avg_coverage_loss | pct }}</div>
+        </div>
+      </div>
+      {% if svc_top %}
+      <div class="departure-services">
+        <div class="label">Most-affected services</div>
+        <ul>
+        {% for s in svc_top %}
+          <li>
+            <code class="path">{{ s.service }}</code>
+            <span class="muted-suffix">{{ s.affected_files }}/{{ s.file_count }} files
+              {%- if s.orphaned_files %}, {{ s.orphaned_files }} orphan{%- endif -%}
+              , {{ s.avg_coverage_loss | pct }} avg loss</span>
+          </li>
+        {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<h1 class="group-title">Knowledge State</h1>
+
+<section>
+  <h2>Knowledge decay — top concerns</h2>
+  <p class="note">
+    Decay rises when an owner stops touching a file and others have been changing it.
+    The 90-day projection shows the trajectory if nothing changes.
+  </p>
+  {% if ctx.decay_top %}
+  <table>
+    <thead><tr>
+      <th>File</th><th>Top owner</th>
+      <th class="num">Days since touch</th>
+      <th class="num">Decay score</th>
+      <th>Risk</th>
+      <th class="num">90-day projection</th>
+    </tr></thead>
+    <tbody>
+    {% for d in ctx.decay_top %}
+      <tr>
+        <td><code class="path">{{ d.file }}</code></td>
+        <td>{{ ctx.label(d.top_owner) }}</td>
+        <td class="num">{{ d.days_since_owner_touch | days }}</td>
+        <td class="num">{{ d.decay_score | pct }}</td>
+        <td><span class="badge {{ d.risk_level }}">{{ d.risk_level }}</span></td>
+        <td class="num">{{ d.projections[90] | pct }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No decay signals detected.</div>
+  {% endif %}
+</section>
+
+{% if ctx.ai_readiness %}
+<section>
+  <h2>AI-native operational context</h2>
+  <p class="note">
+    Coverage of AI-readable organizational memory — agent rules, specs,
+    prompts, architecture decisions, skills. Higher coverage means new
+    contributors (human or AI) have more to load. This is not an
+    AI-generated-code detector.
+  </p>
+  <table>
+    <thead><tr>
+      <th>Surface</th>
+      <th>Agent rules</th>
+      <th>Specs</th>
+      <th>Prompts</th>
+      <th>Architecture</th>
+      <th>Skills</th>
+      <th class="num">Coverage</th>
+    </tr></thead>
+    <tbody>
+      {% set rows = [ctx.ai_readiness.repo] + (ctx.ai_readiness.services | list)[:10] %}
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.target }}</td>
+        <td>{% if r.agent_rules %}✓{% else %}—{% endif %}</td>
+        <td>{% if r.specs %}✓{% else %}—{% endif %}</td>
+        <td>{% if r.prompts %}✓{% else %}—{% endif %}</td>
+        <td>{% if r.architecture %}✓{% else %}—{% endif %}</td>
+        <td>{% if r.skills %}✓{% else %}—{% endif %}</td>
+        <td class="num">{{ (r.coverage_ratio * 100) | round(0) | int }}%</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<h1 class="group-title">Process Quality</h1>
 
 {% if not ctx.reviews_enabled and ctx.detected_remote %}
 <section>
@@ -530,273 +612,64 @@ graph LR
 </section>
 {% endif %}
 
-{% if ctx.codeowners and ctx.codeowners.findings %}
-{% set co_individual_count = (ctx.codeowners.aligned | length) + (ctx.codeowners.mismatches | length) + (ctx.codeowners.stale | length) + (ctx.codeowners.orphans | length) %}
+{% if ctx.correction_load_files %}
 <section>
-  <h2>CODEOWNERS validation</h2>
+  <h2>Correction load</h2>
   <p class="note">
-    Declared owners in the project's CODEOWNERS file are compared against the
-    actual top contributor for each file (last 180 days by default).
-    <em>Mismatch</em> = declared owner is no longer the dominant contributor.
-    <em>Stale</em> = declared owner hasn't touched the file recently.
-    <em>Orphan</em> = file matches no rule. <em>Team-only</em> = only team ownership,
-    can't validate against commit history.
-  </p>
-  {% if co_individual_count == 0 and (ctx.codeowners.team_only | length) > 0 %}
-  <div class="empty">
-    CODEOWNERS exists but every rule declares only team-level owners
-    (e.g. <code>@org/team</code>). Per-file individual validation requires
-    at least one <code>@username</code> or email owner.
-    {{ ctx.codeowners.team_only | length }} files matched team rules — no
-    actionable findings to surface here.
-  </div>
-  {% else %}
-  <div class="cards">
-    <div class="card"><div class="label">Aligned</div><div class="value" style="color:var(--healthy);">{{ ctx.codeowners.aligned | length }}</div></div>
-    <div class="card"><div class="label">Mismatch</div><div class="value" style="color:var(--critical);">{{ ctx.codeowners.mismatches | length }}</div></div>
-    <div class="card"><div class="label">Stale</div><div class="value" style="color:var(--high);">{{ ctx.codeowners.stale | length }}</div></div>
-    <div class="card"><div class="label">Orphan</div><div class="value" style="color:var(--high);">{{ ctx.codeowners.orphans | length }}</div></div>
-    <div class="card"><div class="label">Team-only</div><div class="value" style="color:var(--medium);">{{ ctx.codeowners.team_only | length }}</div></div>
-  </div>
-  {% endif %}
-  {% if ctx.codeowners.mismatches %}
-  <h3 style="margin-top:24px;font-size:15px;font-weight:600;color:#475569;">Mismatches — declared owner is not the actual top contributor</h3>
-  <table>
-    <thead><tr>
-      <th>File</th>
-      <th>Declared</th>
-      <th>Actual top</th>
-      <th class="num">Their coverage</th>
-      <th class="num">Rule line</th>
-    </tr></thead>
-    <tbody>
-    {% for f in ctx.codeowners.mismatches[:20] %}
-      <tr>
-        <td><code class="path">{{ f.file }}</code></td>
-        <td style="font-size:13px;">{{ f.declared_owners | join(", ") }}</td>
-        <td>{% if f.actual_top_owner %}{{ ctx.label(f.actual_top_owner) }}{% else %}—{% endif %}</td>
-        <td class="num"><span class="badge critical">{{ f.actual_coverage | pct }}</span></td>
-        <td class="num">{{ f.rule_line or "—" }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
-  {% if ctx.codeowners.stale %}
-  <h3 style="margin-top:24px;font-size:15px;font-weight:600;color:#475569;">Stale entries — declared owner hasn't touched the file recently</h3>
-  <table>
-    <thead><tr>
-      <th>File</th>
-      <th>Declared</th>
-      <th class="num">Days since touch</th>
-      <th class="num">Rule line</th>
-    </tr></thead>
-    <tbody>
-    {% for f in ctx.codeowners.stale[:20] %}
-      <tr>
-        <td><code class="path">{{ f.file }}</code></td>
-        <td style="font-size:13px;">{{ f.declared_owners | join(", ") }}</td>
-        <td class="num">{% if f.days_since_declared_touch is not none %}{{ f.days_since_declared_touch }}{% else %}—{% endif %}</td>
-        <td class="num">{{ f.rule_line or "—" }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
-  {% if ctx.codeowners.orphans %}
-  <h3 style="margin-top:24px;font-size:15px;font-weight:600;color:#475569;">Orphans — files with no CODEOWNERS rule</h3>
-  <table>
-    <thead><tr>
-      <th>File</th>
-      <th>Actual top owner</th>
-      <th class="num">Coverage</th>
-    </tr></thead>
-    <tbody>
-    {% for f in ctx.codeowners.orphans[:20] %}
-      <tr>
-        <td><code class="path">{{ f.file }}</code></td>
-        <td>{% if f.actual_top_owner %}{{ ctx.label(f.actual_top_owner) }}{% else %}—{% endif %}</td>
-        <td class="num">{{ f.actual_coverage | pct }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
-</section>
-{% endif %}
-
-{% if ctx.recommendations %}
-<section>
-  <h2>Recommended actions</h2>
-  <p class="note">
-    Concrete next steps derived from the signals in this report.
-    Each action is tied to a specific finding — treat them as conversation starters
-    with the team, not directives.
-  </p>
-  <table>
-    <thead><tr>
-      <th>Priority</th>
-      <th>Category</th>
-      <th>Title</th>
-      <th>Target</th>
-      <th>Evidence</th>
-    </tr></thead>
-    <tbody>
-    {% for a in ctx.recommendations %}
-      <tr>
-        <td>
-          {% set prio_color = ({"High": "critical", "Medium": "high", "Low": "medium"})[a.priority.value] %}
-          <span class="badge {{ prio_color }}">{{ a.priority.value }}</span>
-        </td>
-        <td>{{ a.category.value }}</td>
-        <td>
-          {% if a.pattern %}
-          <span class="pattern-badge" title="Recurring fragility pattern">{{ a.pattern.value }}</span>
-          {% endif %}
-          <strong>{{ a.title }}</strong>
-          <div style="margin-top:4px;color:var(--muted);font-size:13px;">{{ a.description }}</div>
-          {% if ctx.narrative and ctx.narrative.rationales.get(a.target) %}
-          <span class="rationale">▸ {{ ctx.narrative.rationales[a.target] }}</span>
-          {% endif %}
-        </td>
-        <td><code class="path">{{ a.target }}</code></td>
-        <td style="font-size:12px;color:var(--muted);font-family:ui-monospace,monospace;">{{ a.evidence }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</section>
-{% endif %}
-
-{% if ctx.ai_signal_enabled %}
-<section>
-  <h2>Author signal profiles <span style="font-size:13px;color:var(--high);font-weight:500;">— experimental</span></h2>
-  <p class="note">
-    Heuristic classification based on recent vs baseline activity patterns combined with quality signals.
-    <strong>This is a verification prompt, not a verdict.</strong> Always confirm with the author before acting.
-    Profiles:
-    <em>Real Growth</em> — organic increase;
-    <em>AI Amplified Healthy</em> — spike with stable quality;
-    <em>Fake Velocity</em> — spike with elevated quality risk.
-  </p>
-  {% if ctx.author_profiles %}
-  <table>
-    <thead><tr>
-      <th>Author</th>
-      <th>Profile</th>
-      <th>AI flag</th>
-      <th class="num">Quality risk</th>
-      <th>Signal strength</th>
-      <th>Notes</th>
-    </tr></thead>
-    <tbody>
-    {% for p in ctx.author_profiles %}
-      <tr>
-        <td>{{ ctx.label(p.author_email) }}</td>
-        <td>
-          {% set color = ({"Fake Velocity": "critical", "AI Amplified Healthy": "high", "Real Growth": "healthy", "Bot": "medium", "Insufficient Data": "medium"}).get(p.profile_type.value, "medium") %}
-          <span class="badge {{ color }}">{{ p.profile_type.value }}</span>
-        </td>
-        <td>{% if p.ai_signal %}{{ p.ai_signal.flag.value }}{% else %}—{% endif %}</td>
-        <td class="num">{% if p.quality_signal %}{{ p.quality_signal.risk_score | pct }}{% else %}—{% endif %}</td>
-        <td>{{ p.signal_strength.value }}</td>
-        <td style="font-size:13px;color:var(--muted);">{{ p.explanation }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <div class="empty">No author profiles produced (window too short for baseline).</div>
-  {% endif %}
-</section>
-{% endif %}
-
-{% if ctx.diff_summary %}
-<section>
-  <h2>PR activity mix</h2>
-  <p class="note">
-    Each PR is classified by what it actually changed.
-    A repo dominated by docs and chore PRs ships fewer features than the commit count suggests.
-  </p>
-  <table>
-    <thead><tr>
-      <th>Category</th>
-      <th class="num">PRs</th>
-      <th class="num">Share</th>
-    </tr></thead>
-    <tbody>
-    {% for cat, count in ctx.diff_summary.counts.items() %}
-      {% if count > 0 %}
-      <tr>
-        <td>{{ cat.value }}</td>
-        <td class="num">{{ count }}</td>
-        <td class="num">{{ ctx.diff_summary.ratios[cat] | pct }}</td>
-      </tr>
-      {% endif %}
-    {% endfor %}
-    </tbody>
-  </table>
-
-  {% if ctx.diff_summary.top_churned_files %}
-  <h3 style="margin-top:24px;font-size:15px;font-weight:600;color:#475569;">Top churned files</h3>
-  <p class="note">
-    Files most touched by PRs in this window. Repeated heavy churn often signals an
-    unstable or under-specified area that should be reviewed for clarity.
+    Share of recent commits to each file that are follow-up fixes or reverts.
+    A high ratio is observable evidence of <em>stability debt</em> — work is
+    shipping but corrections are paying for it. Look at the surface, not the
+    person.
   </p>
   <table>
     <thead><tr>
       <th>File</th>
-      <th class="num">PRs</th>
-      <th class="num">Lines added</th>
-      <th class="num">Lines deleted</th>
-    </tr></thead>
-    <tbody>
-    {% for f in ctx.diff_summary.top_churned_files %}
-      <tr>
-        <td><code class="path">{{ f.file }}</code></td>
-        <td class="num">{{ f.pr_count }}</td>
-        <td class="num">{{ f.additions }}</td>
-        <td class="num">{{ f.deletions }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
-</section>
-{% endif %}
-
-<section>
-  <h2>Knowledge decay — top concerns</h2>
-  <p class="note">
-    Decay rises when an owner stops touching a file and others have been changing it.
-    The 90-day projection shows the trajectory if nothing changes.
-  </p>
-  {% if ctx.decay_top %}
-  <table>
-    <thead><tr>
-      <th>File</th><th>Top owner</th>
-      <th class="num">Days since touch</th>
-      <th class="num">Decay score</th>
+      <th class="num">Total commits</th>
+      <th class="num">Fixes</th>
+      <th class="num">Reverts</th>
+      <th class="num">Correction ratio</th>
       <th>Risk</th>
-      <th class="num">90-day projection</th>
     </tr></thead>
     <tbody>
-    {% for d in ctx.decay_top %}
+    {% for f in ctx.correction_load_files[:10] %}
       <tr>
-        <td><code class="path">{{ d.file }}</code></td>
-        <td>{{ ctx.label(d.top_owner) }}</td>
-        <td class="num">{{ d.days_since_owner_touch | days }}</td>
-        <td class="num">{{ d.decay_score | pct }}</td>
-        <td><span class="badge {{ d.risk_level }}">{{ d.risk_level }}</span></td>
-        <td class="num">{{ d.projections[90] | pct }}</td>
+        <td>{{ f.file }}</td>
+        <td class="num">{{ f.total_commits }}</td>
+        <td class="num">{{ f.fix_commits }}</td>
+        <td class="num">{{ f.revert_commits }}</td>
+        <td class="num">{{ f.correction_ratio | pct }}</td>
+        <td><span class="badge {{ f.risk_level }}">{{ f.risk_level }}</span></td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
-  {% else %}
-  <div class="empty">No decay signals detected.</div>
-  {% endif %}
 </section>
+{% endif %}
+
+{% if ctx.module_graph and ctx.module_graph.edges %}
+<details class="architecture-details">
+  <summary>Architecture details — module dependency map</summary>
+  <section style="margin-top:16px;">
+    <p class="note">
+      Top-level directories rolled up from the file dependency graph. Each
+      node is a module ({{ ctx.module_graph.nodes | length }} shown, ranked by
+      total connection weight); each edge is the count of file-level imports
+      crossing between them. Arrows point from caller to callee.
+    </p>
+    <div class="mermaid-wrap">
+      <pre class="mermaid">
+graph LR
+{% for n in ctx.module_graph.nodes -%}
+  m_{{ n.name | replace('/', '_') | replace('-', '_') | replace('.', '_') | replace('(', '') | replace(')', '') }}["{{ n.name }}<br/>{{ n.file_count }} file{% if n.file_count != 1 %}s{% endif %}"]
+{% endfor -%}
+{% for e in ctx.module_graph.edges -%}
+  m_{{ e.from_module | replace('/', '_') | replace('-', '_') | replace('.', '_') | replace('(', '') | replace(')', '') }} -->|{{ e.weight }}| m_{{ e.to_module | replace('/', '_') | replace('-', '_') | replace('.', '_') | replace('(', '') | replace(')', '') }}
+{% endfor -%}
+      </pre>
+    </div>
+  </section>
+</details>
+{% endif %}
 
 <footer>
   <p><strong>Methodology.</strong>

@@ -3,6 +3,153 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.0.5c0] — 2026-05-16 (Pre-alpha)
+
+The "service granularity" hotfix. Recommendations and the service risk
+map no longer collapse a Python package into one giant `src` (or `lib`)
+pseudo-service.
+
+### New
+- **Smart `service_of` factory** — when scanning a repo with a source
+  root that contains a single package (e.g. `src/blindspot/`), services
+  are now the directories *inside* the package (`risk_models`, `actions`,
+  `narrative`, `report`, `collector`, …) instead of the source root
+  itself. Auto-detected via `auto_detect_code_root()` + a child-count
+  probe; the user can still override with `--code-root`.
+- **`Service root:` line** in scan output names the prefix that was
+  stripped, so the granularity choice is visible.
+- **"Start with: X" enrichment** — service-level diversification
+  recommendations now name the highest-importance code file in the
+  service (e.g. *"Start with: src/blindspot/dependency_graph/extractors/
+  base.py (highest importance in this service)"*). The evidence string
+  also gains `top_file=...`. New `RecommendationContext.service_top_files`
+  field carries the map; built in `cli.py` from `critical_files` +
+  `importance_map`.
+
+### Changed
+- Service tables (`Service risk map` in HTML + the terminal "Service
+  risk" table) now show package-internal modules instead of `src` /
+  `lib`. Decay-by-service and multi-person departure scenarios use the
+  same definition for consistency.
+
+### Removed (BREAKING)
+- **CODEOWNERS validation HTML section** removed. The validator engine
+  still runs and still emits `CODEOWNERS_UPDATE` recommendations for
+  mismatched and stale entries — the standalone counts/sub-tables block
+  was redundant next to the punch list and added noise. Consumers
+  parsing the HTML for `<h2>CODEOWNERS validation</h2>` will break.
+
+### Internal
+- All `for_services(...)` and `simulate(...)` call sites in `cli.py`
+  now pass `service_of=` explicitly; the engines themselves were
+  unchanged (they already accepted the injection).
+
+## [0.0.5b0] — 2026-05-16 (Pre-alpha)
+
+The "strategic showcase" release. Multi-person departure scenarios make
+the signals from 0.0.4 + 0.0.5a boardroom-presentable, and the README is
+repositioned around the same theme.
+
+The single grouped report layout (one mode, no flag) is the explicit
+design choice — the TL;DR group already sits at the top of every report
+for executive consumption; detailed groups follow for drill-down.
+
+### New
+- **Multi-person departure simulation** — new flag
+  `--simulate-departures "alice@x.com,bob@x.com,carol@x.com"` adds a
+  combined "if these N people leave together" card to the report on top
+  of the per-contributor top-N scenarios. The card spans the full grid
+  width and uses pill chips for each person.
+- **README hero revamp** — value-first opening (Engineering resilience
+  for AI-accelerated teams), explicit multi-person example up front,
+  capabilities re-organised as a "what it measures" table.
+
+## [0.0.5a0] — 2026-05-16 (Pre-alpha)
+
+The "report hygiene" release. The HTML report is streamlined — fewer
+sections, the strongest signals surfaced first, and AI-readiness now
+generates recommendations instead of just displaying coverage.
+
+### New
+- **AI-readiness gap recommendation** — services with fewer than 2/5
+  AI-native context categories now emit a `KNOWLEDGE_TRANSFER`
+  recommendation. Priority is bumped to MEDIUM when the service's bus
+  factor is ≤ 1 (the gap compounds with knowledge concentration).
+- **Risk inventory surfacing** for both new signals: the executive
+  summary's risk-inventory paragraph now lists
+  *"N file(s) carry high correction load"* and
+  *"N service(s) lack AI-readable operational context"*.
+- **Headline picker** integrates correction load — when no higher-priority
+  signal fires, a fragile-velocity file becomes the headline.
+- **Rule-based narrator rationales** for Fragile-velocity actions and
+  AI-readiness-gap actions (EN + TR).
+- **Letter grades (A-F)** for Engineering Resilience sub-scores. Overall
+  score and each of Ownership / Decay / Review now show a letter grade
+  beside the numeric value.
+- **4-group section layout** — the report is organised under four headers:
+  *TL;DR*, *People & Ownership*, *Knowledge State*, *Process Quality*.
+  Module dependency map moved into a collapsible "Architecture details"
+  group at the bottom.
+
+### Changed
+- **Recommendations moved to the top** (was 13th of 17 sections; now
+  immediately under the resilience score).
+- **`--simulate-top-departures` default 6 → 3** — six cards crowded the
+  view; three is enough for "the most critical contributors". Pass
+  `--simulate-top-departures 6` to restore the 0.0.4 behaviour.
+
+### Removed (BREAKING, pre-alpha 0.x)
+- HTML report sections removed: **Activity summary** (basic git stats
+  every tool provides), **Central models** (niche, low CTO value),
+  **Structural backbone** (used only as an internal filter — backend
+  computation kept, display dropped), **PR activity mix + top churned
+  files** (correction load is the stronger signal). The engines still
+  compute the data; only the display was dropped.
+- Consumers parsing the HTML by section title will break — pre-alpha
+  0.x permits this.
+
+## [0.0.4] — 2026-05-15 (Pre-alpha)
+
+The "user theses" release. Two new observable signals replace the
+speculative AI-velocity detection: **Correction Load** (per-file ratio
+of follow-up fixes/reverts) and **AI Readiness** (coverage of AI-native
+operational artifacts). Both treat work surfaces, not people, as the
+unit of analysis.
+
+### New
+- **Correction Load** (`risk_models.correction_load`) — classifies each
+  commit's intent (FIX / REVERT / FEATURE / OTHER) via a multilingual
+  commit-message parser (`diff_analysis.commit_intent`, EN + TR), then
+  computes per-author and per-file correction ratios. High ratios mark
+  fragile-velocity work surfaces. A new `Fragile velocity` fragility
+  pattern is emitted in recommendations.
+- **AI Readiness** (`risk_models.ai_readiness`) — per-service coverage
+  matrix for AI-native operational artifacts: agent rules (`CLAUDE.md`,
+  `.cursor/rules`, copilot instructions), specs, prompts, architecture
+  decisions, skills. This is **not** an AI-generated-code detector — it
+  measures whether organizational memory exists for new contributors
+  (human or AI) to load.
+
+### Changed
+- README capabilities section updated to reflect Correction Load and
+  AI Readiness; roadmap reordered.
+
+### Removed (BREAKING, pre-alpha 0.x)
+- `ai_signal/` module removed in full. The speculative `FAKE_VELOCITY`
+  author classification, `AIAmplificationDetector`, `QualitySignalEngine`,
+  `AuthorProfiler` and the `--experimental-ai-signal` flag are gone.
+  Rationale: surveillance-shaped framing and speculative inference are
+  incompatible with the project's evidence-over-inference principle.
+  The replacement signals (Correction Load, AI Readiness) look at the
+  work surface, not the author. The `ai_signal` name is reserved for
+  future use in the AI-native operational context family.
+- `FragilityPattern.VELOCITY_WITHOUT_REVIEW` and the related
+  `headline_velocity` / `rationale_velocity` rule-based narrator
+  labels removed.
+- `ResilienceScore.activity` sub-score removed; weights renormalised
+  across ownership / decay / review. Authors of code calling the
+  engine directly should drop the `author_profiles` argument.
+
 ## [0.0.3] — 2026-05-15 (Pre-alpha)
 
 The "scan-and-go" release. `pip install blindspot && blindspot scan /repo`

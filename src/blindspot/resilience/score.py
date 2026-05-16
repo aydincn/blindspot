@@ -1,6 +1,6 @@
 """Composite Engineering Resilience Score (0–100).
 
-Combines four sub-scores into a single number a non-technical stakeholder can
+Combines three sub-scores into a single number a non-technical stakeholder can
 track over time. Each sub-score is 0–100, higher = healthier. Sub-scores that
 have no data are excluded from the weighted average rather than treated as 0.
 """
@@ -8,7 +8,6 @@ have no data are excluded from the weighted average rather than treated as 0.
 from dataclasses import dataclass
 from typing import Iterable
 
-from blindspot.ai_signal.models import AuthorProfile, AuthorProfileType
 from blindspot.review_graph.engine import FileReviewStats
 from blindspot.risk_models.bus_factor import ServiceBusFactor
 from blindspot.risk_models.knowledge_decay import FileDecay
@@ -16,11 +15,25 @@ from blindspot.risk_models.knowledge_decay import FileDecay
 
 # Sub-score weights when all signals are present.
 DEFAULT_WEIGHTS = {
-    "ownership": 0.35,
-    "decay": 0.30,
-    "review": 0.20,
-    "activity": 0.15,
+    "ownership": 0.40,
+    "decay": 0.35,
+    "review": 0.25,
 }
+
+
+def letter_grade(score: int | None) -> str | None:
+    """Map a 0–100 sub-score to a letter grade (A–F). Returns None for None."""
+    if score is None:
+        return None
+    if score >= 90:
+        return "A"
+    if score >= 80:
+        return "B"
+    if score >= 70:
+        return "C"
+    if score >= 60:
+        return "D"
+    return "F"
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,7 +42,6 @@ class ResilienceScore:
     ownership: int | None
     decay: int | None
     review: int | None
-    activity: int | None
     band: str
     summary: str
 
@@ -39,8 +51,23 @@ class ResilienceScore:
             "ownership": self.ownership,
             "decay": self.decay,
             "review": self.review,
-            "activity": self.activity,
         }
+
+    @property
+    def overall_grade(self) -> str:
+        return letter_grade(self.overall) or "F"
+
+    @property
+    def ownership_grade(self) -> str | None:
+        return letter_grade(self.ownership)
+
+    @property
+    def decay_grade(self) -> str | None:
+        return letter_grade(self.decay)
+
+    @property
+    def review_grade(self) -> str | None:
+        return letter_grade(self.review)
 
 
 def _band(score: int) -> str:
@@ -66,7 +93,6 @@ class ResilienceScoreEngine:
         services: Iterable[ServiceBusFactor],
         decays: Iterable[FileDecay],
         review_stats: dict[str, FileReviewStats] | None = None,
-        author_profiles: dict[str, AuthorProfile] | None = None,
     ) -> ResilienceScore:
         services = tuple(services)
         decays = tuple(decays)
@@ -74,13 +100,11 @@ class ResilienceScoreEngine:
         ownership = self._ownership_score(services)
         decay = self._decay_score(decays)
         review = self._review_score(review_stats) if review_stats else None
-        activity = self._activity_score(author_profiles) if author_profiles else None
 
         components = {
             "ownership": ownership,
             "decay": decay,
             "review": review,
-            "activity": activity,
         }
         available = {k: v for k, v in components.items() if v is not None}
         if not available:
@@ -89,7 +113,6 @@ class ResilienceScoreEngine:
                 ownership=ownership,
                 decay=decay,
                 review=review,
-                activity=activity,
                 band="Moderate",
                 summary="Insufficient data to compute resilience.",
             )
@@ -103,7 +126,6 @@ class ResilienceScoreEngine:
             ownership=ownership,
             decay=decay,
             review=review,
-            activity=activity,
             band=_band(overall_int),
             summary=_summary(overall_int, available),
         )
@@ -138,20 +160,6 @@ class ResilienceScoreEngine:
         score = ((1 - avg_rs) * 0.6 + avg_div * 0.4) * 100
         return int(round(score))
 
-    def _activity_score(self, profiles: dict[str, AuthorProfile]) -> int | None:
-        # Excludes bots and insufficient-data authors from the denominator.
-        relevant = [
-            p
-            for p in profiles.values()
-            if p.profile_type
-            not in (AuthorProfileType.BOT, AuthorProfileType.INSUFFICIENT_DATA)
-        ]
-        if not relevant:
-            return None
-        bad = sum(1 for p in relevant if p.profile_type == AuthorProfileType.FAKE_VELOCITY)
-        ratio_good = 1 - bad / len(relevant)
-        return int(round(ratio_good * 100))
-
 
 def _summary(overall: int, available: dict[str, int]) -> str:
     band = _band(overall)
@@ -160,7 +168,6 @@ def _summary(overall: int, available: dict[str, int]) -> str:
         "ownership": "ownership concentration",
         "decay": "knowledge decay",
         "review": "review hygiene",
-        "activity": "author activity signals",
     }[weakest[0]]
     return (
         f"{band} resilience overall (score {overall}). "
@@ -168,4 +175,9 @@ def _summary(overall: int, available: dict[str, int]) -> str:
     )
 
 
-__all__ = ["DEFAULT_WEIGHTS", "ResilienceScore", "ResilienceScoreEngine"]
+__all__ = [
+    "DEFAULT_WEIGHTS",
+    "ResilienceScore",
+    "ResilienceScoreEngine",
+    "letter_grade",
+]

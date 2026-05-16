@@ -51,9 +51,9 @@ report itself shows the exact setup steps. See
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--experimental-ai-signal` | off | Classify authors by AI-amplification + code-quality signals. Experimental — see [algorithms.md](algorithms.md#10-ai-amplification-detector). |
 | `--check-codeowners` / `--no-check-codeowners` | on | Validate the repo's `CODEOWNERS` file (if present) against actual ownership. |
-| `--simulate-top-departures` | `6` | Add "what-if departure" scenario cards to the report for the top-N contributors by aggregate coverage. `0` disables it. |
+| `--simulate-top-departures` | `3` | Add "what-if departure" scenario cards to the report for the top-N contributors by aggregate coverage. `0` disables it. |
+| `--simulate-departures` | `""` | Comma-separated emails for a single multi-person "what-if" scenario. Example: `--simulate-departures "alice@x.com,bob@x.com,carol@x.com"`. The combined card is rendered on top of the top-N scenarios and spans the full grid width. |
 
 The trend section (resilience snapshots at 90/60/30/0 days ago) is
 **always on** — no flag.
@@ -133,9 +133,9 @@ Prints the installed Blindspot version. No options.
   factor, decay, departure, dependency graph, central models,
   resilience score, trend, narrative (rule-based) — still works on
   local git alone.
-- **Conditional report sections:** author profiles appear with
-  `--experimental-ai-signal`; trend and narrative appear always. See
-  [outputs.md](outputs.md).
+- **Conditional report sections:** correction-load and AI-readiness
+  sections appear whenever signal exists (no flag); trend and narrative
+  appear always. See [outputs.md](outputs.md).
 
 ---
 
