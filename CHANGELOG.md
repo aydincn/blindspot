@@ -3,6 +3,42 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.0.5d0] — 2026-05-16 (Pre-alpha)
+
+The "CTO-level credibility" pass. Three fixes driven by saha testleri
+across flask / rich / awesome / kubernetes / fastapi — the kind of
+embarrassments a single demo would surface.
+
+### New
+- **Wider bot pattern matching** — `*-robot`, `*-bot`, `bot-*`,
+  `automation*`, `ci-*` identity patterns are now caught alongside the
+  existing `[bot]` suffix and known-name fragments. Closes a regression
+  where Kubernetes Release Robot became the headline recommendation in
+  a k8s scan ("Pair Kubernetes Release Robot on CHANGELOG — bus factor
+  1 across 5 files").
+- **Support-service exclusion** — new `SUPPORT_SERVICES` set in
+  `actions/recommender.py` (`.github`, `docs`, `tests`, `scripts`,
+  `examples`, `hack`, `vendor`, `(root)`, `(config)`, `(other)`, and
+  friends). The bus-factor + AI-readiness rules skip these surfaces:
+  they appear in the data tables for awareness, but no action is
+  emitted. CI workflows being maintained by one engineer is by design,
+  not a fragility to fix.
+- **Structural-note framing** — when the resilience band reads
+  "Fragile" or "Critical" *and* the ownership sub-score is below 40
+  (which is structurally typical for founder-led / single-maintainer
+  projects), the executive summary now appends a one-line note:
+  *"This is a structural property — typical for founder-led or
+  single-maintainer projects — not a verdict on project health."*
+  EN + TR.
+
+### Why these three together
+Three independent failure modes saha testlerinde aynı boardroom
+demo'sunu mahvediyordu: (a) bot kişi sanılıyor; (b) ".github" gibi
+support directory'ler "diversify ownership of" önerisi alıyor; (c)
+"Critical" band'ı mature OSS için panik mesajı veriyor. Hepsi 0.0.5d
+ile kapanıyor; recommendation tablosu artık eylem-üretmeyen gürültüden
+arınıyor.
+
 ## [0.0.5c0] — 2026-05-16 (Pre-alpha)
 
 The "service granularity" hotfix. Recommendations and the service risk

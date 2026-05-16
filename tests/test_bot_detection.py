@@ -38,3 +38,39 @@ def test_does_not_flag_humans_as_bots(email, name):
 def test_handles_empty_inputs():
     assert not is_bot_author("", "")
     assert not is_bot_author("", "Some Name")
+
+
+# ---------------------------------------------------------------------------
+# Wider bot patterns (0.0.5d) — release robots, automation accounts, etc.
+
+@pytest.mark.parametrize(
+    "email,name",
+    [
+        # k8s release robot — caught Kubernetes head-line action regression
+        ("k8s-release-robot@github", "Kubernetes Release Robot"),
+        ("release-robot@github", "Release Robot"),
+        ("automation@example.com", "Automation"),
+        ("kubernetes-release-bot@github", "Kubernetes Release Bot"),
+        ("ci-deploy@example.com", "CI Deploy"),
+        # name-only path — email is generic
+        ("noreply@github.com", "test-robot"),
+        ("noreply@github.com", "bot-foo"),
+    ],
+)
+def test_flags_broader_bot_patterns(email, name):
+    assert is_bot_author(email, name)
+
+
+@pytest.mark.parametrize(
+    "email,name",
+    [
+        # "Roberto" should not be caught by *-robot* pattern
+        ("roberto@example.com", "Roberto Garcia"),
+        # "ci" word inside a normal name should not flag — boundary check
+        ("lucia@example.com", "Lucia Smith"),
+        # noreply.github.com with a real login is a human
+        ("123+alice@users.noreply.github.com", "Alice"),
+    ],
+)
+def test_does_not_overflag_humans(email, name):
+    assert not is_bot_author(email, name)

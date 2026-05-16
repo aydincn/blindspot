@@ -294,7 +294,8 @@ def _readiness_report(*services, repo=None):
 
 
 def test_ai_readiness_gap_recommends_low_when_no_bus_factor_pressure():
-    report = _readiness_report(_readiness_coverage("docs"))
+    # "docs" is in SUPPORT_SERVICES — use a real product service instead.
+    report = _readiness_report(_readiness_coverage("payment"))
     ctx = RecommendationContext(ai_readiness=report)
     actions = RecommendationEngine().recommend(ctx)
     a = next(
@@ -303,7 +304,7 @@ def test_ai_readiness_gap_recommends_low_when_no_bus_factor_pressure():
         and "AI-readable" in a.title
     )
     assert a.priority == ActionPriority.LOW
-    assert "docs" in a.target
+    assert "payment" in a.target
 
 
 def test_ai_readiness_gap_priority_bumped_for_critical_bus_factor():
@@ -359,3 +360,47 @@ def test_service_bus_factor_omits_start_with_when_no_top_file():
     a = next(a for a in actions if a.category == ActionCategory.OWNERSHIP_DIVERSIFICATION)
     assert "Start with:" not in a.description
     assert "top_file=" not in a.evidence
+
+
+# ---------------------------------------------------------------------------
+# Support-service exclusion (0.0.5d) — .github / docs / tests etc. should
+# not generate "diversify ownership" or "add AI context" recommendations.
+
+def test_support_services_skip_diversification_rule():
+    # All four are in SUPPORT_SERVICES; none should produce an action.
+    services = (
+        _service(".github", 5, "alice@x.com", 0.95),
+        _service("docs", 30, "alice@x.com", 0.95),
+        _service("tests", 80, "alice@x.com", 0.95),
+        _service("scripts", 4, "alice@x.com", 0.95),
+    )
+    ctx = RecommendationContext(services=services)
+    actions = RecommendationEngine().recommend(ctx)
+    assert not any(
+        a.category == ActionCategory.OWNERSHIP_DIVERSIFICATION
+        for a in actions
+    )
+
+
+def test_product_service_still_fires_diversification_rule():
+    svc = _service("payment", 8, "alice@x.com", 0.85)
+    ctx = RecommendationContext(services=(svc,))
+    actions = RecommendationEngine().recommend(ctx)
+    assert any(
+        a.category == ActionCategory.OWNERSHIP_DIVERSIFICATION
+        and "payment" in a.target
+        for a in actions
+    )
+
+
+def test_support_services_skip_ai_readiness_gap():
+    # All in SUPPORT_SERVICES → no AI-readable recommendations.
+    report = _readiness_report(
+        _readiness_coverage(".github"),
+        _readiness_coverage("docs"),
+        _readiness_coverage("tests"),
+        _readiness_coverage("scripts"),
+    )
+    ctx = RecommendationContext(ai_readiness=report)
+    actions = RecommendationEngine().recommend(ctx)
+    assert not any("AI-readable" in a.title for a in actions)

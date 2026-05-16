@@ -197,3 +197,27 @@ def test_headline_correction_load_when_no_higher_priority():
     nr = RuleBasedNarrator(language="en").summarize(ctx)
     assert "src/hot.py" in nr.headline_action
     assert "50" in nr.headline_action
+
+
+def test_structural_note_added_when_critical_band_ownership_low():
+    """0.0.5d — soften 'Critical' framing for single-maintainer projects."""
+    score = ResilienceScore(
+        overall=35, ownership=20, decay=70, review=None,
+        band="Critical", summary="…",
+    )
+    ctx = _empty_ctx(resilience=score)
+    nr = RuleBasedNarrator(language="en").summarize(ctx)
+    assert "structural property" in nr.executive_summary.lower()
+    assert "founder-led" in nr.executive_summary.lower()
+
+
+def test_structural_note_omitted_when_ownership_healthy():
+    """If ownership sub-score is healthy, no need for the softening note
+    even on a low overall score (the issue is elsewhere)."""
+    score = ResilienceScore(
+        overall=45, ownership=80, decay=10, review=40,
+        band="Fragile", summary="…",
+    )
+    ctx = _empty_ctx(resilience=score)
+    nr = RuleBasedNarrator(language="en").summarize(ctx)
+    assert "structural property" not in nr.executive_summary.lower()

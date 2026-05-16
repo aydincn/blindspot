@@ -33,6 +33,7 @@ _LABELS: dict[str, dict[str, str]] = {
         "dim_review": "review hygiene",
         "verdict_score": "Resilience is **{band}** ({score}/100).",
         "verdict_weakest": "Weakest dimension: {dim}.",
+        "verdict_structural_note": "This is a structural property — typical for founder-led or single-maintainer projects — not a verdict on project health.",
         "para_counts_lead": "Risk inventory:",
         "para_counts_services": "{n} service(s) rest on a single contributor",
         "para_counts_decay": "{n} file(s) are decaying critically",
@@ -67,6 +68,7 @@ _LABELS: dict[str, dict[str, str]] = {
         "dim_review": "review hijyeni",
         "verdict_score": "Resilience **{band}** ({score}/100).",
         "verdict_weakest": "En zayıf boyut: {dim}.",
+        "verdict_structural_note": "Bu yapısal bir özellik — founder-led veya tek-maintainer projeler için tipik — proje sağlığı hakkında bir yargı değil.",
         "para_counts_lead": "Risk envanteri:",
         "para_counts_services": "{n} servis tek kişiye bağlı",
         "para_counts_decay": "{n} dosyada kritik bilgi erozyonu",
@@ -186,6 +188,13 @@ class RuleBasedNarrator:
             weakest = self._weakest_dimension(ctx)
             if weakest:
                 verdict += " " + _label(L, "verdict_weakest").format(dim=weakest)
+            # Descriptive footnote when the band reads "Fragile" or "Critical"
+            # and the weakest dimension is ownership. Stops a long-lived
+            # single-maintainer OSS being mis-read as "the project is on
+            # fire". Surveillance-rule-aligned: framing, not verdict.
+            band = ctx.resilience.band
+            if band in ("Fragile", "Critical") and ctx.resilience.ownership is not None and ctx.resilience.ownership < 40:
+                verdict += " " + _label(L, "verdict_structural_note")
             paragraphs.append(verdict)
 
         # Para 2: counts

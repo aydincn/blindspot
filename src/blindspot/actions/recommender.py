@@ -37,6 +37,41 @@ class RecommendationContext:
     service_top_files: dict[str, str] = field(default_factory=dict)
 
 
+# Top-level directories that are operationally important but rarely benefit
+# from "diversify ownership" advice — they're typically maintained by 1-2
+# release/infra engineers by design (CI workflows, docs, fixtures, vendored
+# code). Recommendation rules treat these as support surfaces: the service
+# still appears in the bus-factor / risk tables for awareness, but no action
+# is emitted against them.
+SUPPORT_SERVICES: frozenset[str] = frozenset({
+    "(root)",
+    "(config)",
+    "(other)",
+    ".github",
+    "docs",
+    "documentation",
+    "docs_src",
+    "docs-src",
+    "site",
+    "website",
+    "tests",
+    "test",
+    "__tests__",
+    "scripts",
+    "script",
+    "examples",
+    "example",
+    "samples",
+    "hack",
+    "vendor",
+    "vendored",
+    "third_party",
+    "third-party",
+    "build",
+    "dist",
+})
+
+
 @dataclass
 class RecommendationEngine:
     decay_critical_threshold: float = 0.75
@@ -51,6 +86,7 @@ class RecommendationEngine:
     importance_threshold: float = 0.005
     correction_load_high_threshold: float = 0.35
     ai_readiness_min_coverage: int = 2
+    support_services: frozenset[str] = SUPPORT_SERVICES
 
     def _passes_importance(self, ctx: RecommendationContext, file: str) -> bool:
         """Filter out files structurally unimportant to the codebase.
@@ -87,6 +123,8 @@ class RecommendationEngine:
         for s in ctx.services:
             if s.bus_factor > 1 or not s.top_owners:
                 continue
+            if s.service in self.support_services:
+                continue  # CI/docs/tests/scripts — single-owner by design
             owner_email, owner_cov = s.top_owners[0]
             owner_label = self._label(ctx, owner_email)
             priority = ActionPriority.HIGH if s.file_count >= 5 else ActionPriority.MEDIUM
@@ -301,6 +339,7 @@ class RecommendationEngine:
             (
                 c for c in ctx.ai_readiness.services
                 if c.coverage_count < self.ai_readiness_min_coverage
+                and c.target not in self.support_services
             ),
             key=lambda c: (c.coverage_count, c.target),
         )
