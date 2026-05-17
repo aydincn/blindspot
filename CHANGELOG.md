@@ -43,6 +43,43 @@ söylüyor.
 - ❌ No tagline / README hero / pyproject description değişimi
 - ❌ No marketing manifesto
 
+### Saha re-test verdict (5 repo, 2026-05-17 post-ship)
+Cohort: Blindspot self · `blind_spot` (eski clone, 6 commit) · `openpy`
+(OpenAI Python SDK, team) · `kubernetes` (multi-org, 137K commits) ·
+`openclaw` (49K commits, çoklu maintainer).
+
+**Çalışan kazanımlar (saha doğrulamalı):**
+- Executive brief her repoda overall band + top 3 risks + business
+  implication üretiyor. Önceki "1 dakikada ne yapayım?" havada
+  kalmıyor.
+- 5 sub-score + FOCUS badge gerçek odak üretiyor: Blindspot/blind_spot
+  → AI Readiness · openpy → **Correction** (yeni sub-score'un
+  doğrudan işe yaraması) · kubernetes/openclaw → AI Readiness (mature
+  infra'da operational doküman gap'i).
+- Compound risk merging: Blindspot'ta 8+ ayrı satır → 3 compound + 2
+  dağınık. Aynı dosya 4 satırda tekrar etmiyor.
+- Confidence layer doğru ağırlandırma: kubernetes (137K commits) →
+  3 HIGH; openclaw (49K commits) → 10 HIGH; Blindspot self (60 days,
+  1 author) → 1 HIGH/6 LOW; blind_spot (6 commit!) → 1 HIGH/8 LOW.
+- Profile-aware business implication: single-maintainer = "structural"
+  dili; team = "3-5 weeks delivery slowdown"; multi-org = rakam ağırlıklı.
+
+**Kayıtta kalan 3 saha zayıflığı (sonraki minor patch adayları):**
+- Z1: Fragile Velocity pattern 5/5 repoda tetiklemedi — 3/4 axis
+  threshold çok agresif olabilir. cline / n8n gibi pattern üreten
+  repolar bu cohort'ta yoktu; doğrulamak için ayrı saha turu gerek.
+- Z2: kubernetes AI Readiness 0/F yanlış pozitif. K8s'in `OWNERS`,
+  `OWNERS_ALIASES`, `keps/` (KEP — enhancement proposals)
+  AI-readiness pattern listesinde yok. Detector pattern'leri
+  genişletilmeli.
+- Z3: openpy Correction 0/F muhtemelen release-pipeline artefaktı —
+  CHANGELOG-only commit'leri "fix" kategorisine girip 100% file'a
+  yansıyor. Commit intent classifier'a "release-only" filter aday.
+
+**Embarrassment-free pass:** 0.0.5d-öncesi gözlenen "Release Robot
+headline", "Diversify .github/docs/tests", "Critical panik kelimesi",
+"1262 file pair-program" hatalarından hiçbiri 5 repoda tekrarlamıyor.
+
 ## [0.0.9] — 2026-05-17 (Pre-alpha)
 
 The "Fragile Velocity pattern detector" release. The signature pattern
