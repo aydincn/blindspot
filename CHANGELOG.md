@@ -3,6 +3,40 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.0.7] — 2026-05-17 (Pre-alpha)
+
+The "Executive Brief" release. 30-repo saha testi sonrası en yüksek
+değer/maliyet düzeltmesi: rapor en başına 1-sayfa CTO-language brief
+ekler. Aynı veri, decision-clarity-first sunum.
+
+### New
+- **Executive brief block** at the very top of the HTML report — surfaces
+  what a CTO needs in 90 seconds: overall resilience band, top 3
+  risks (de-duplicated), business implication sentence. Above the
+  existing narrative; replaces nothing.
+- **Business implication mapper** (`narrative/business_implication.py`)
+  — deterministic, profile-aware signal-to-CTO-language translator.
+  Priority: delivery cost from departure orphans → multiple
+  single-owner services → stability debt → review theatre → AI-
+  onboarding gap. EN + TR. Returns `None` when no signal is strong
+  enough — silence over hedged sentence.
+- **Top-3 risk selector** (`narrative/exec_risks.py`) — weights actions
+  by fragility pattern *and* priority (so a MEDIUM
+  single-owner-concentration outranks a HIGH plain rec), then
+  de-duplicates by target so one service can't crowd out other risks.
+
+### Fixed
+- **AI-readiness service granularity** — `AIReadinessEngine.detect()`
+  was hard-coded to `top_level_dir()`, ignoring the code-root-aware
+  `service_of` factory that bus-factor / decay / departure all use.
+  Result: single-package Python repos saw "src" as an AI-readiness
+  service in recommendations. Now accepts `service_of` injection like
+  the rest of the engines.
+
+### Tests
+- 459 passing (+16 since 0.0.6): 8 business_implication, 5 exec_risks,
+  3 report (brief render + AI-readiness regression).
+
 ## [0.0.6] — 2026-05-17 (Pre-alpha)
 
 The "Phase 2 graph package" release. Four signals that turn the report

@@ -134,6 +134,63 @@ def test_renders_html_with_expected_sections(make_repo):
     assert __version__ in html
 
 
+def test_executive_brief_renders_when_signals_present(make_repo):
+    """0.0.7 — top-of-report executive brief block surfaces top risks +
+    business implication."""
+    from blindspot.actions.models import (
+        ActionCategory,
+        ActionPriority,
+        FragilityPattern,
+        RecommendedAction,
+    )
+    from blindspot.narrative.exec_risks import ExecRisk
+    repo = make_repo(
+        [
+            CommitSpec("Alice", "alice@x.com", "payment/main.py", "1\n", 5),
+            CommitSpec("Bob", "bob@x.com", "shared/util.py", "2\n", 4),
+        ]
+    )
+    ctx = _build_context(repo)
+    from dataclasses import replace as _replace
+    ctx = _replace(
+        ctx,
+        recommendations=(
+            RecommendedAction(
+                priority=ActionPriority.HIGH,
+                category=ActionCategory.OWNERSHIP_DIVERSIFICATION,
+                title="Diversify ownership of 'payment'",
+                description="…", target="payment",
+                evidence="…", pattern=FragilityPattern.SINGLE_OWNER_CONCENTRATION,
+            ),
+        ),
+        top_risks=(
+            ExecRisk(
+                priority=ActionPriority.HIGH,
+                title="Diversify ownership of 'payment'",
+                target="payment",
+                pattern=FragilityPattern.SINGLE_OWNER_CONCENTRATION,
+            ),
+        ),
+        business_implication="Test implication sentence appearing in brief.",
+    )
+    html = ReportRenderer().render(ctx)
+    assert "executive-brief" in html
+    assert "Top 1 risk" in html
+    assert "Diversify ownership of &#39;payment&#39;" in html
+    assert "Test implication sentence appearing in brief." in html
+    assert "Business implication" in html
+
+
+def test_executive_brief_absent_when_no_signals(make_repo):
+    """Empty repo → no top_risks, no business_implication → no brief block."""
+    repo = make_repo([])
+    ctx = _build_context(repo)
+    html = ReportRenderer().render(ctx)
+    # CSS class lives in the <style> block always — but the <section>
+    # itself must be absent when there's nothing to say.
+    assert '<section class="executive-brief">' not in html
+
+
 def test_report_renders_four_group_headers(make_repo):
     """0.0.5a hygiene pass — sections grouped under 4 h1 headers."""
     repo = make_repo(

@@ -75,6 +75,11 @@ class ReportContext:
     # Parallel to trend.snapshots: nearest event for each snapshot, or
     # None. Avoids requiring Jinja to call Python helpers.
     trend_snapshot_events: tuple = ()
+    # Executive brief (0.0.7) — top of the report. The mapper + selector
+    # already chose the most CTO-relevant cuts of the underlying data;
+    # template just renders them.
+    top_risks: tuple = ()
+    business_implication: str | None = None
 
     def label(self, email: str) -> str:
         name = self.names.get(email)

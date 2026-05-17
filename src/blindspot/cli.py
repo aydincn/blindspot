@@ -50,7 +50,9 @@ from blindspot.narrative import (
     generate_narrative,
     load_narrative_config,
 )
+from blindspot.narrative.business_implication import business_implication
 from blindspot.narrative.client import MissingAPIKey, NarrativeError, build_client
+from blindspot.narrative.exec_risks import select_top_risks
 from blindspot.ownership import OwnershipEngine
 from blindspot.report import (
     DepartureContext,
@@ -597,7 +599,7 @@ def scan(
         console.print(mix_table)
 
     correction_report = CorrectionLoadEngine().compute(commits)
-    ai_readiness = AIReadinessEngine().detect(files)
+    ai_readiness = AIReadinessEngine().detect(files, service_of=service_of)
 
     # Top author by aggregated ownership coverage — used by the profile
     # detector to tell "founder-led" from "team-based".
@@ -858,7 +860,18 @@ def scan(
                 a.target,
             )
         console.print(rec_table)
-    ctx = replace(ctx, recommendations=recommendations)
+    # Executive brief — top of report.
+    top_risks = select_top_risks(recommendations)
+    biz_implication = business_implication(
+        replace(ctx, recommendations=recommendations),
+        language=narrative_lang,
+    )
+    ctx = replace(
+        ctx,
+        recommendations=recommendations,
+        top_risks=top_risks,
+        business_implication=biz_implication,
+    )
 
     # Narrative — always-on. Cloud LLM if api_key configured, else
     # rule-based fallback (deterministic, in-process, no network).

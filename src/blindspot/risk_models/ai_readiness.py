@@ -18,7 +18,7 @@ service directory, derived from the tracked file list.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from blindspot.risk_models.bus_factor import top_level_dir
@@ -120,22 +120,41 @@ def _strip_service_prefix(path: str, service: str) -> str | None:
 
 @dataclass
 class AIReadinessEngine:
-    def detect(self, files: Iterable[str]) -> AIReadinessReport:
+    def detect(
+        self,
+        files: Iterable[str],
+        *,
+        service_of: Callable[[str], str] = top_level_dir,
+    ) -> AIReadinessReport:
         files = tuple(files)
 
         # Repo-level: match against full paths.
         repo_found = _match_categories(files)
         repo_cov = AIReadinessCoverage(target="(repo)", **repo_found)
 
-        # Per-service: group by top-level dir, strip the prefix, match.
+        # Per-service: group by service_of(file), then strip the appropriate
+        # prefix. When the caller passes a code-root-aware factory (cli.py),
+        # services become the directories *inside* the package, not the
+        # source root.
         services: dict[str, list[str]] = {}
         for f in files:
-            svc = top_level_dir(f)
+            svc = service_of(f)
             if svc.startswith("(") and svc.endswith(")"):
                 continue
+            # If the factory stripped a prefix already, find which prefix
+            # by checking what's at the start of the path.
             relative = _strip_service_prefix(f, svc)
             if relative is None:
-                continue
+                # Path doesn't start with the service segment directly —
+                # the factory must have stripped a code-root prefix. Find
+                # the segment that matches the resolved service in the
+                # path tail.
+                marker = f"/{svc}/"
+                idx = f.find(marker)
+                if idx >= 0:
+                    relative = f[idx + len(marker):]
+                else:
+                    continue
             services.setdefault(svc, []).append(relative)
 
         per_service = tuple(

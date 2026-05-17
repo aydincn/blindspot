@@ -118,6 +118,102 @@ footer p { margin: 4px 0; }
 .profile-badge.profile-unknown { background: rgba(15, 23, 42, 0.06); color: var(--muted); }
 .profile-note { color: var(--muted); font-size: 12.5px; }
 .event-marker { display: inline-block; padding: 1px 8px; border-radius: 4px; background: #fef3c7; color: var(--high); font-weight: 600; font-size: 11px; }
+.executive-brief {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  padding: 18px 22px;
+  margin-bottom: 28px;
+}
+.executive-brief .eyebrow {
+  color: var(--accent);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.executive-brief .overall-line {
+  margin: 0 0 14px;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.executive-brief .overall-tag {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.executive-brief .overall-tag.band-strong { background: #f0fdf4; color: var(--healthy); }
+.executive-brief .overall-tag.band-moderate { background: #ecfeff; color: var(--medium); }
+.executive-brief .overall-tag.band-fragile { background: #fef3c7; color: var(--high); }
+.executive-brief .overall-tag.band-critical { background: #fef2f2; color: var(--critical); }
+.executive-brief .overall-text { color: var(--fg); font-weight: 500; }
+.executive-brief .risk-list-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.executive-brief ol {
+  margin: 0 0 14px;
+  padding-left: 0;
+  list-style: none;
+  counter-reset: brief-risk;
+}
+.executive-brief ol li {
+  counter-increment: brief-risk;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: 14px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.executive-brief ol li:last-child { border-bottom: none; }
+.executive-brief ol li::before {
+  content: counter(brief-risk) ".";
+  color: var(--muted);
+  font-weight: 700;
+  min-width: 18px;
+}
+.executive-brief .risk-prio {
+  font-size: 10px;
+  padding: 2px 7px;
+  letter-spacing: 0.05em;
+}
+.executive-brief .risk-target { color: var(--muted); font-size: 12.5px; }
+.executive-brief .risk-target code { font-size: 12px; }
+.executive-brief .business-implication {
+  margin: 0;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, #f0f9ff 0%, #ffffff 100%);
+  border: 1px solid #bae6fd;
+  border-radius: 6px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #1e293b;
+}
+.executive-brief .bi-eyebrow {
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  vertical-align: middle;
+}
 .narrative { background: linear-gradient(180deg, #f0f9ff 0%, #ffffff 100%); border: 1px solid #bae6fd; border-radius: 10px; padding: 24px 28px; margin-bottom: 32px; }
 .narrative .eyebrow { color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 6px; }
 .narrative .headline { font-size: 18px; font-weight: 600; line-height: 1.4; margin: 0 0 14px; color: var(--fg); }
@@ -193,6 +289,43 @@ details.architecture-details[open] summary { color: var(--accent); }
     blindspot v{{ ctx.blindspot_version }}
   </p>
 </header>
+
+{% if ctx.top_risks or ctx.business_implication %}
+<section class="executive-brief">
+  <div class="eyebrow">Executive brief — what a CTO needs in 90 seconds</div>
+  {% if ctx.resilience %}
+  {% set band_class = "band-" ~ ctx.resilience.band | lower %}
+  <p class="overall-line">
+    <span class="overall-tag {{ band_class }}">{{ ctx.resilience.band }}</span>
+    <span class="overall-text">
+      Resilience {{ ctx.resilience.overall }}/100 · {{ ctx.resilience.overall_grade }}
+      {% if ctx.repo_profile %}· {{ ctx.repo_profile.replace("-", " ") }} profile{% endif %}
+    </span>
+  </p>
+  {% endif %}
+  {% if ctx.top_risks %}
+  <div class="risk-list">
+    <div class="risk-list-title">Top {{ ctx.top_risks | length }} risk{% if ctx.top_risks | length != 1 %}s{% endif %}</div>
+    <ol>
+      {% for r in ctx.top_risks %}
+        {% set prio_color = ({"High": "critical", "Medium": "high", "Low": "medium"})[r.priority.value] %}
+        <li>
+          <span class="risk-prio badge {{ prio_color }}">{{ r.priority.value | upper }}</span>
+          <strong>{{ r.title }}</strong>
+          <span class="risk-target">— <code>{{ r.target }}</code></span>
+        </li>
+      {% endfor %}
+    </ol>
+  </div>
+  {% endif %}
+  {% if ctx.business_implication %}
+  <p class="business-implication">
+    <span class="bi-eyebrow">Business implication</span>
+    {{ ctx.business_implication }}
+  </p>
+  {% endif %}
+</section>
+{% endif %}
 
 {% if ctx.narrative %}
 <div class="narrative">
