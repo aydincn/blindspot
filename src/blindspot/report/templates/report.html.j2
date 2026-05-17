@@ -100,6 +100,24 @@ footer p { margin: 4px 0; }
   color: var(--muted);
   vertical-align: middle;
 }
+.profile-tag { margin: 12px 2px 0; font-size: 13px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.profile-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.profile-badge.profile-single-maintainer,
+.profile-badge.profile-founder-led { background: #eef2ff; color: #4338ca; }
+.profile-badge.profile-team { background: #f0fdf4; color: var(--healthy); }
+.profile-badge.profile-multi-org { background: #fef3c7; color: var(--high); }
+.profile-badge.profile-doc-only { background: #fef2f2; color: var(--critical); }
+.profile-badge.profile-unknown { background: rgba(15, 23, 42, 0.06); color: var(--muted); }
+.profile-note { color: var(--muted); font-size: 12.5px; }
+.event-marker { display: inline-block; padding: 1px 8px; border-radius: 4px; background: #fef3c7; color: var(--high); font-weight: 600; font-size: 11px; }
 .narrative { background: linear-gradient(180deg, #f0f9ff 0%, #ffffff 100%); border: 1px solid #bae6fd; border-radius: 10px; padding: 24px 28px; margin-bottom: 32px; }
 .narrative .eyebrow { color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 6px; }
 .narrative .headline { font-size: 18px; font-weight: 600; line-height: 1.4; margin: 0 0 14px; color: var(--fg); }
@@ -157,7 +175,7 @@ details.architecture-details summary {
 }
 details.architecture-details[open] summary { color: var(--accent); }
 </style>
-{% if ctx.module_graph and ctx.module_graph.edges %}
+{% if (ctx.module_graph and ctx.module_graph.edges) or (ctx.knowledge_graph and ctx.knowledge_graph.edges) %}
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad: true, theme: 'neutral', flowchart: {curve: 'basis'}});</script>
 {% endif %}
@@ -228,6 +246,28 @@ details.architecture-details[open] summary { color: var(--accent); }
     </div>
   </div>
   <p class="summary">{{ ctx.resilience.summary }}</p>
+  {% if ctx.repo_profile %}
+  {% set profile_label = ({
+    "single-maintainer": "Single-maintainer",
+    "founder-led": "Founder-led",
+    "team": "Team-based",
+    "multi-org": "Multi-org / enterprise",
+    "doc-only": "Doc-only",
+    "unknown": "Unknown profile",
+  }).get(ctx.repo_profile, ctx.repo_profile) %}
+  {% set profile_note = ({
+    "single-maintainer": "Concentration is structural and expected.",
+    "founder-led": "One contributor dominates by design; concentration is structural.",
+    "team": "Multiple maintainers without a single dominant contributor.",
+    "multi-org": "Concentration signals here are real risks, not artefacts.",
+    "doc-only": "Very little code surface — treat results with caution.",
+    "unknown": "Mixed signals; profile could not be confidently classified.",
+  }).get(ctx.repo_profile, "") %}
+  <p class="profile-tag">
+    <span class="profile-badge profile-{{ ctx.repo_profile }}">{{ profile_label }}</span>
+    <span class="profile-note">{{ profile_note }}</span>
+  </p>
+  {% endif %}
 </section>
 {% endif %}
 
@@ -290,10 +330,12 @@ details.architecture-details[open] summary { color: var(--accent); }
       <th class="num">Decay</th>
       <th>Band</th>
       <th></th>
+      {% if ctx.timeline_events %}<th>Event</th>{% endif %}
     </tr></thead>
     <tbody>
     {% for snap in ctx.trend.snapshots %}
       {% set band_lc = snap.score.band | lower %}
+      {% set event = ctx.trend_snapshot_events[loop.index0] if ctx.trend_snapshot_events else None %}
       <tr>
         <td>{% if snap.days_ago == 0 %}now{% else %}{{ snap.days_ago }} days ago{% endif %}</td>
         <td class="num band-{{ band_lc }}" style="font-weight:600;">{{ snap.score.overall }}</td>
@@ -305,6 +347,13 @@ details.architecture-details[open] summary { color: var(--accent); }
             <div class="trend-bar-fill band-{{ band_lc }}" style="width: {{ snap.score.overall }}%; background: currentColor;"></div>
           </div>
         </td>
+        {% if ctx.timeline_events %}
+        <td style="font-size:12px;">
+          {% if event %}
+          <span class="event-marker" title="{{ event.date }}">⚑ {{ event.label }}</span>
+          {% else %}—{% endif %}
+        </td>
+        {% endif %}
       </tr>
     {% endfor %}
     </tbody>
@@ -446,6 +495,36 @@ details.architecture-details[open] summary { color: var(--accent); }
 </section>
 {% endif %}
 
+{% if ctx.knowledge_graph and ctx.knowledge_graph.edges %}
+<section>
+  <h2>Knowledge graph — who carries what</h2>
+  <p class="note">
+    Top contributors × top services, edges only where one person carries
+    ≥ 10% of a service's effective ownership. Thick edges = single-owner
+    concentration. <strong>Read it as:</strong> the team-shaped picture
+    of where knowledge lives.
+  </p>
+  <div class="mermaid-wrap">
+    <pre class="mermaid">
+graph LR
+{% for c in ctx.knowledge_graph.contributors -%}
+  c_{{ loop.index }}["{{ ctx.label(c) }}"]:::contributor
+{% endfor -%}
+{% for s in ctx.knowledge_graph.services -%}
+  s_{{ loop.index }}["{{ s }}"]:::service
+{% endfor -%}
+{% for e in ctx.knowledge_graph.edges -%}
+  {% set ci = ctx.knowledge_graph.contributors.index(e.contributor) + 1 -%}
+  {% set si = ctx.knowledge_graph.services.index(e.service) + 1 -%}
+  c_{{ ci }} -->|"{{ (e.coverage * 100) | round(0) | int }}%"| s_{{ si }}
+{% endfor -%}
+classDef contributor fill:#eef2ff,stroke:#4338ca,stroke-width:1px,color:#1e1b4b;
+classDef service fill:#f0fdf4,stroke:#16a34a,stroke-width:1px,color:#14532d;
+    </pre>
+  </div>
+</section>
+{% endif %}
+
 <h1 class="group-title">Knowledge State</h1>
 
 <section>
@@ -480,6 +559,37 @@ details.architecture-details[open] summary { color: var(--accent); }
   <div class="empty">No decay signals detected.</div>
   {% endif %}
 </section>
+
+{% if ctx.change_fear and ctx.change_fear.files %}
+<section>
+  <h2>Change-fear index — files nobody dares to touch</h2>
+  <p class="note">
+    Structurally central files (high PageRank) edited by very few people
+    and untouched recently. The team is shipping around them. <strong>Read it as:</strong>
+    if one of these breaks, the muscle memory is gone — and so is whoever wrote it.
+  </p>
+  <table>
+    <thead><tr>
+      <th>File</th>
+      <th class="num">Importance</th>
+      <th class="num">Contributors</th>
+      <th class="num">Days since touch</th>
+      <th>Risk</th>
+    </tr></thead>
+    <tbody>
+    {% for f in ctx.change_fear.files %}
+      <tr>
+        <td><code class="path">{{ f.file }}</code></td>
+        <td class="num">{{ (f.importance * 100) | round(2) }}%</td>
+        <td class="num">{{ f.contributor_count }}</td>
+        <td class="num">{{ f.days_since_touch | round(0) | int }}</td>
+        <td><span class="badge {{ f.risk_level }}">{{ f.risk_level }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
 
 {% if ctx.ai_readiness %}
 <section>

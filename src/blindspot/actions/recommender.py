@@ -10,6 +10,7 @@ from blindspot.actions.models import (
 from blindspot.codeowners import CodeOwnersReport
 from blindspot.diff_analysis.classifier import classify_file
 from blindspot.review_graph.engine import FileReviewStats
+from blindspot.resilience.silos import SilosReport
 from blindspot.risk_models.ai_readiness import AIReadinessReport
 from blindspot.risk_models.bus_factor import FileBusFactor, ServiceBusFactor
 from blindspot.risk_models.correction_load import (
@@ -37,6 +38,7 @@ class RecommendationContext:
     # plus a cadence hint. Built in cli.py from critical_files +
     # importance_map.
     service_top_files: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    silos: SilosReport | None = None
 
 
 # Top-level directories that are operationally important but rarely benefit
@@ -113,6 +115,7 @@ class RecommendationEngine:
         actions.extend(self._fast_approval(ctx))
         actions.extend(self._correction_load(ctx))
         actions.extend(self._ai_readiness_gap(ctx))
+        actions.extend(self._hidden_silos(ctx))
         actions.extend(self._codeowners(ctx))
         actions.sort(key=lambda a: (PRIORITY_ORDER[a.priority], a.category.value, a.target))
         return actions
@@ -467,6 +470,38 @@ class RecommendationEngine:
                     )
                 )
         return out[: self.max_per_rule]
+
+    def _hidden_silos(self, ctx: RecommendationContext) -> list[RecommendedAction]:
+        """Flag services whose reviewer set is disjoint from every other
+        service. Tribal-knowledge clusters waiting for an exit interview."""
+        if ctx.silos is None or not ctx.silos.findings:
+            return []
+        out: list[RecommendedAction] = []
+        for f in ctx.silos.findings[: self.max_per_rule]:
+            reviewer_preview = ", ".join(f.reviewers[:3])
+            if len(f.reviewers) > 3:
+                reviewer_preview += f", … (+{len(f.reviewers) - 3})"
+            out.append(
+                RecommendedAction(
+                    priority=ActionPriority.MEDIUM,
+                    category=ActionCategory.REVIEW_HYGIENE,
+                    title=f"Cross-pollinate reviewers for '{f.service}'",
+                    description=(
+                        f"Service '{f.service}' is reviewed exclusively by "
+                        f"{len(f.reviewers)} people ({reviewer_preview}) and "
+                        "none of them appear as reviewers on any other "
+                        "service in this scan. That's a tribal-knowledge "
+                        "cluster — pull in a reviewer from another area to "
+                        "create cross-service literacy before someone leaves."
+                    ),
+                    target=f.service,
+                    evidence=(
+                        f"unique_reviewers={len(f.reviewers)}, "
+                        f"reviews={f.review_count}, cross_service_overlap=0"
+                    ),
+                )
+            )
+        return out
 
     def _codeowners(self, ctx: RecommendationContext) -> list[RecommendedAction]:
         report = ctx.codeowners_report

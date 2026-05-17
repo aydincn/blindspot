@@ -60,6 +60,9 @@ from blindspot.report import (
 )
 from blindspot.resilience import ResilienceScoreEngine
 from blindspot.resilience.profile import detect_profile
+from blindspot.resilience.knowledge_graph import build_knowledge_graph
+from blindspot.resilience.silos import detect_silos
+from blindspot.resilience.change_fear import compute_change_fear
 from blindspot.review_graph import ReviewGraph, ReviewGraphBuilder
 from blindspot.risk_models import (
     AIReadinessEngine,
@@ -70,6 +73,7 @@ from blindspot.risk_models import (
 )
 from blindspot.risk_models.departure import DepartureReport
 from blindspot.trend import TrendEngine
+from blindspot.trend.events import event_for_snapshot, load_events
 
 app = typer.Typer(
     name="blindspot",
@@ -612,6 +616,19 @@ def scan(
         top_author_coverage=_top_author_coverage,
     )
 
+    knowledge_graph = build_knowledge_graph(ownership, service_of=service_of)
+    silos_report = (
+        detect_silos(review_graph, service_of=service_of)
+        if review_graph is not None
+        else None
+    )
+    change_fear_report = compute_change_fear(commits, importance_map)
+    timeline_events = load_events(path)
+    if timeline_events:
+        console.print(
+            f"  Loaded {len(timeline_events)} timeline event(s) from .blindspot.yaml"
+        )
+
     resilience = ResilienceScoreEngine().compute(
         services,
         decays,
@@ -783,6 +800,14 @@ def scan(
         correction_load_files=correction_report.files,
         ai_readiness=ai_readiness,
         repo_profile=repo_profile,
+        knowledge_graph=knowledge_graph,
+        silos=silos_report,
+        change_fear=change_fear_report,
+        timeline_events=timeline_events,
+        trend_snapshot_events=tuple(
+            event_for_snapshot(snap.as_of.date(), timeline_events)
+            for snap in (trend.snapshots if trend else ())
+        ),
     )
 
     # Per-service: up to 3 highest-importance code files (fallback: highest-
@@ -812,6 +837,7 @@ def scan(
         correction_load_files=correction_report.files,
         ai_readiness=ai_readiness,
         service_top_files=service_top_files,
+        silos=silos_report,
     )
     recommendations = tuple(
         RecommendationEngine(importance_threshold=importance_threshold).recommend(rec_ctx)

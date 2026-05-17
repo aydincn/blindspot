@@ -3,6 +3,41 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.0.6] — 2026-05-17 (Pre-alpha)
+
+The "Phase 2 graph package" release. Four signals that turn the report
+from a list of facts into a system-shaped picture, plus a profile
+badge in the HTML hero so the band reads correctly at a glance.
+
+### New
+- **Knowledge graph** (`resilience/knowledge_graph.py`) — bipartite
+  top-N contributors × top-M services Mermaid diagram in the
+  *People & Ownership* group. Edges = per-service coverage share;
+  thick edges = single-owner concentration. The team-shaped picture
+  of where knowledge lives.
+- **Hidden silo detection** (`resilience/silos.py`) — flags services
+  whose reviewer set never overlaps any other service in the scan.
+  Tribal-knowledge clusters. Emits a `REVIEW_HYGIENE` MEDIUM
+  recommendation: "Cross-pollinate reviewers for '{service}'".
+- **Change Fear Index** (`resilience/change_fear.py`) — new
+  "files nobody dares to touch" table in *Knowledge State*: high
+  PageRank centrality + few contributors + long-untouched. Different
+  from decay: decay is "owner stopped caring", fear is "nobody wants
+  to start".
+- **Timeline event annotations** (`trend/events.py`) — optional
+  `events:` block in `.blindspot.yaml` pins org events (re-orgs,
+  layoffs, AI rollouts) to the resilience trend table. Each snapshot
+  picks the closest event within 14 days. Lets readers see whether a
+  drop coincided with a known organisational change.
+- **Profile badge** in the HTML resilience score block — colour-coded
+  pill (single-maintainer / founder-led / team / multi-org / doc-only /
+  unknown) plus one-line note so the band reads with context, not as a
+  panic label.
+
+### Tests
+- 443 passing (+17 since 0.0.5e): 4 knowledge graph, 4 silo detection,
+  4 change-fear, 5 timeline events.
+
 ## [0.0.5e0] — 2026-05-16 (Pre-alpha)
 
 The "boardroom-grade polish" pass. Three quality-of-life refinements

@@ -60,6 +60,21 @@ class ReportContext:
     # Repo typology label — drives band-level framing in the narrator.
     # See resilience/profile.py for the label set.
     repo_profile: str | None = None
+    # Bipartite contributor × service coverage graph (top-N × top-M).
+    # See resilience/knowledge_graph.py.
+    knowledge_graph: "object | None" = None
+    # Hidden-silo findings: services whose reviewer set never overlaps
+    # with any other service's. See resilience/silos.py.
+    silos: "object | None" = None
+    # Change-fear "files nobody dares to touch" report. See
+    # resilience/change_fear.py.
+    change_fear: "object | None" = None
+    # Optional timeline events loaded from `.blindspot.yaml` to annotate
+    # trend snapshots (re-orgs, AI rollouts, layoffs). See trend/events.py.
+    timeline_events: tuple = ()
+    # Parallel to trend.snapshots: nearest event for each snapshot, or
+    # None. Avoids requiring Jinja to call Python helpers.
+    trend_snapshot_events: tuple = ()
 
     def label(self, email: str) -> str:
         name = self.names.get(email)
