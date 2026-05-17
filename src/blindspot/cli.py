@@ -56,6 +56,7 @@ from blindspot.narrative import (
 from blindspot.narrative.business_implication import business_implication
 from blindspot.narrative.client import MissingAPIKey, NarrativeError, build_client
 from blindspot.narrative.exec_risks import select_top_risks
+from blindspot.patterns import detect_all_patterns
 from blindspot.ownership import OwnershipEngine
 from blindspot.report import (
     DepartureContext,
@@ -884,10 +885,13 @@ def scan(
                 a.target,
             )
         console.print(rec_table)
+    # Patterns (composite-signal recognition: Fragile Velocity, …)
+    patterns = detect_all_patterns(ctx)
+
     # Executive brief — top of report.
     top_risks = select_top_risks(recommendations)
     biz_implication = business_implication(
-        replace(ctx, recommendations=recommendations),
+        replace(ctx, recommendations=recommendations, patterns=patterns),
         language=narrative_lang,
     )
     ctx = replace(
@@ -895,6 +899,7 @@ def scan(
         recommendations=recommendations,
         top_risks=top_risks,
         business_implication=biz_implication,
+        patterns=patterns,
     )
 
     # Narrative — always-on. Cloud LLM if api_key configured, else

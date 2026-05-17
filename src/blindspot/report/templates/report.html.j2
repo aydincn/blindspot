@@ -214,6 +214,57 @@ footer p { margin: 4px 0; }
   color: var(--accent);
   vertical-align: middle;
 }
+.executive-brief .patterns-summary { margin: 0 0 12px; font-size: 13.5px; }
+.pattern-summary-tag {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 4px;
+  margin-right: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.pattern-summary-tag.pattern-sev-high { background: #fef2f2; color: var(--critical); }
+.pattern-summary-tag.pattern-sev-medium { background: #fef3c7; color: var(--high); }
+.pattern-summary-tag.pattern-sev-low { background: #ecfeff; color: var(--medium); }
+.patterns-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+.pattern-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 8px;
+  padding: 16px;
+}
+.pattern-card.pattern-sev-high { border-left-color: var(--critical); }
+.pattern-card.pattern-sev-medium { border-left-color: var(--high); }
+.pattern-card.pattern-sev-low { border-left-color: var(--medium); }
+.pattern-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.pattern-sev-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--muted);
+}
+.pattern-sev-high .pattern-sev-badge { background: #fef2f2; color: var(--critical); }
+.pattern-sev-medium .pattern-sev-badge { background: #fef3c7; color: var(--high); }
+.pattern-sev-low .pattern-sev-badge { background: #ecfeff; color: var(--medium); }
+.pattern-desc { font-size: 13px; line-height: 1.55; color: #1e293b; margin: 0 0 10px; }
+.pattern-evidence { display: flex; flex-wrap: wrap; gap: 6px; }
+.pattern-evidence-pill {
+  font-size: 11px;
+  color: var(--muted);
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
 .narrative { background: linear-gradient(180deg, #f0f9ff 0%, #ffffff 100%); border: 1px solid #bae6fd; border-radius: 10px; padding: 24px 28px; margin-bottom: 32px; }
 .narrative .eyebrow { color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 6px; }
 .narrative .headline { font-size: 18px; font-weight: 600; line-height: 1.4; margin: 0 0 14px; color: var(--fg); }
@@ -322,12 +373,50 @@ details.architecture-details[open] summary { color: var(--accent); }
     </ol>
   </div>
   {% endif %}
+  {% if ctx.patterns %}
+  <p class="patterns-summary">
+    <span class="bi-eyebrow">Patterns detected</span>
+    {% for p in ctx.patterns %}
+      <span class="pattern-summary-tag pattern-sev-{{ p.severity.value | lower }}">{{ p.name }}</span>
+    {% endfor %}
+  </p>
+  {% endif %}
   {% if ctx.business_implication %}
   <p class="business-implication">
     <span class="bi-eyebrow">Business implication</span>
     {{ ctx.business_implication }}
   </p>
   {% endif %}
+</section>
+{% endif %}
+
+{% if ctx.patterns %}
+<section>
+  <h2>Patterns detected</h2>
+  <p class="note">
+    Composite recognitions — when several single-metric signals fire on
+    the same shape, a named pattern names the underlying organisational
+    risk. Different from any single recommendation; addresses the
+    pattern, not the symptom.
+  </p>
+  <div class="patterns-grid">
+    {% for p in ctx.patterns %}
+    <div class="pattern-card pattern-sev-{{ p.severity.value | lower }}">
+      <div class="pattern-head">
+        <span class="pattern-sev-badge">{{ p.severity.value | upper }}</span>
+        <strong>{{ p.name }}</strong>
+      </div>
+      <p class="pattern-desc">{{ p.description }}</p>
+      {% if p.evidence %}
+      <div class="pattern-evidence">
+        {% for k, v in p.evidence.items() %}
+          <span class="pattern-evidence-pill">{{ k.replace("_", " ") }}: {{ v }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
 </section>
 {% endif %}
 

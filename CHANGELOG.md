@@ -3,6 +3,39 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.0.9] — 2026-05-17 (Pre-alpha)
+
+The "Fragile Velocity pattern detector" release. The signature pattern
+of organizational survivability — and the first of a family. Composite-
+signal recognition is the asset no single-metric competitor can copy
+without first carrying all the underlying signals.
+
+### New
+- **Pattern engine** (`src/blindspot/patterns/`) — new package for
+  composite signal detection. ``PatternHit`` dataclass, ``PatternSeverity``
+  enum, ``detect_all_patterns()`` registry.
+- **Fragile Velocity detector** (`patterns/fragile_velocity.py`) — fires
+  when ≥ 3 of these 4 axes trigger:
+    * **concentration** — ≥ 5 critical files at ≥ 80% single-owner
+    * **low_diversity** — ≥ 2 rubber-stamp files
+    * **correction** — ≥ 3 high-correction-load files
+    * **ai_gap** — ≥ 2 services without operational context
+  3 axes ⇒ MEDIUM severity (score 0.75); 4 axes ⇒ HIGH (score 1.0).
+- **Patterns detected** report section — composite recognitions get
+  their own card grid, separate from single-rule recommendations.
+  Empty when no pattern fires, so the noise floor is zero.
+- **Executive brief integration** — patterns appear as colour-coded
+  tags right under "Top N risks" in the brief.
+
+### Why this matters
+Single-metric race is crowded (Datadog, GitClear, Allstacks). Pattern
+detection isn't. Fragile Velocity is the first; the engine scaffold
+is ready for **Onboarding Trap**, **Review Theatre**, **Knowledge
+Cliff** in later releases.
+
+### Tests
+- 479 passing (+6 since 0.0.8): Fragile Velocity detector edge cases.
+
 ## [0.0.8] — 2026-05-17 (Pre-alpha)
 
 The "Risk dedup + Confidence" release. Same problem mentioned in four

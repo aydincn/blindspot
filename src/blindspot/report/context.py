@@ -80,6 +80,9 @@ class ReportContext:
     # template just renders them.
     top_risks: tuple = ()
     business_implication: str | None = None
+    # Pattern hits (0.0.9) — composite-signal recognitions
+    # (Fragile Velocity, …). See patterns/.
+    patterns: tuple = ()
 
     def label(self, email: str) -> str:
         name = self.names.get(email)
