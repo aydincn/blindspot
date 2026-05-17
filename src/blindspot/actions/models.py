@@ -33,6 +33,19 @@ class FragilityPattern(str, Enum):
     REVIEW_WITHOUT_SCRUTINY = "Review without scrutiny"
     SINGLE_OWNER_CONCENTRATION = "Single-owner concentration"
     FRAGILE_VELOCITY = "Fragile velocity"
+    COMPOUND_CONCENTRATION = "Compound concentration"
+
+
+class Confidence(str, Enum):
+    """How much weight to give a recommendation.
+
+    Driven by signal density (commits/PRs in the window), recency, and
+    repo profile (doc-only repos always get LOW; high-volume mature
+    teams default to HIGH).
+    """
+    HIGH = "High"
+    MEDIUM = "Medium"
+    LOW = "Low"
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,11 +57,13 @@ class RecommendedAction:
     target: str
     evidence: str
     pattern: FragilityPattern | None = None
+    confidence: Confidence = Confidence.MEDIUM
 
 
 __all__ = [
     "ActionCategory",
     "ActionPriority",
+    "Confidence",
     "FragilityPattern",
     "PRIORITY_ORDER",
     "RecommendedAction",

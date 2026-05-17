@@ -3,6 +3,32 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.0.8] — 2026-05-17 (Pre-alpha)
+
+The "Risk dedup + Confidence" release. Same problem mentioned in four
+different recommendations now collapses to one compound line; every
+recommendation carries a confidence badge so you know when to trust
+the headline number.
+
+### New
+- **Confidence layer** — `RecommendedAction.confidence` (Confidence enum:
+  HIGH / MEDIUM / LOW). New `actions/confidence.py` scoring engine:
+  scan-level ceiling driven by commit volume + window + repo profile
+  (doc-only ⇒ always LOW); per-action downgrade for review-hygiene
+  rules with thin samples (< 5 reviews). Confidence badge in the
+  recommendations table.
+- **Compound risk merging** — `actions/compound.py` post-processes the
+  recommendation list. When the same file/service triggers ≥ 2 rules
+  (e.g. bus factor 1 *and* knowledge decay *and* high correction load),
+  they collapse to one *Compound concentration* line that names the
+  combined risk. Aggregate targets (`(repo)`, `"4 services"`) skip
+  collapsing. New `FragilityPattern.COMPOUND_CONCENTRATION`.
+- **Recommendations table** now shows a Confidence column alongside
+  Priority. Compound rows carry the new pattern badge.
+
+### Tests
+- 473 passing (+14 since 0.0.7): 8 confidence, 6 compound.
+
 ## [0.0.7] — 2026-05-17 (Pre-alpha)
 
 The "Executive Brief" release. 30-repo saha testi sonrası en yüksek

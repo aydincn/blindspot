@@ -9,6 +9,9 @@ from rich.table import Table
 
 from blindspot import __version__
 from blindspot.actions import RecommendationContext, RecommendationEngine
+from blindspot.actions.compound import merge_compound_risks
+from blindspot.actions.confidence import confidence_for, scan_confidence
+from blindspot.actions.models import ActionCategory
 from blindspot.codeowners import (
     CodeOwnersValidator,
     find_codeowners_file,
@@ -841,9 +844,30 @@ def scan(
         service_top_files=service_top_files,
         silos=silos_report,
     )
-    recommendations = tuple(
+    raw_recommendations = list(
         RecommendationEngine(importance_threshold=importance_threshold).recommend(rec_ctx)
     )
+    # Confidence layer — repo-level ceiling + per-action category-aware
+    ceiling = scan_confidence(
+        commit_count=len(commits),
+        window_days=since_days,
+        repo_profile=repo_profile,
+    )
+    typed_recs = []
+    for a in raw_recommendations:
+        review_n = 0
+        if a.category == ActionCategory.REVIEW_HYGIENE and review_graph is not None:
+            stats = review_graph.file_stats.get(a.target)
+            if stats is not None:
+                review_n = stats.total_reviews
+        from dataclasses import replace as _replace2
+        typed_recs.append(
+            _replace2(a, confidence=confidence_for(
+                a, scan_ceiling=ceiling, review_sample_size=review_n,
+            ))
+        )
+    # Compound-risk merging — collapse same-target ≥ 2 lines.
+    recommendations = tuple(merge_compound_risks(typed_recs))
     if recommendations:
         rec_table = Table(title=f"Recommended actions ({len(recommendations)})")
         rec_table.add_column("Priority")
