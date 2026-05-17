@@ -3,6 +3,46 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.0] — 2026-05-17 (Pre-alpha)
+
+The "5 temel kategori — odak görünürlüğü" release. The resilience
+score grew up — three sub-scores became five. A CTO sees which of the
+five product axes is dragging at first glance, and the weakest one
+carries a "FOCUS" badge so they know where to start.
+
+Marketing yüzeyleri (README hero, tagline, pyproject description)
+dokunulmadı — kullanıcı kararı: mevcut framing zaten doğru pozisyonu
+söylüyor.
+
+### New
+- **5 sub-scores instead of 3** — ownership, decay, review (existing),
+  plus **correction load** and **AI readiness**. Each carries its own
+  letter grade (A–F) badge.
+- **FOCUS highlight** — the weakest sub-score in any given scan gets a
+  small "FOCUS" badge plus a subtle outline. CTO's eye lands on the
+  problem axis in 5 seconds, no composite-survivability-score
+  abstraction needed.
+- **`ResilienceScore.focus_dimension()`** — programmatic access to
+  whichever sub-score is the worst. Used by the template; available
+  to downstream consumers.
+
+### Changed
+- **Score weights renormalised** (BREAKING for trend continuity):
+    * ownership 0.40 → 0.30
+    * decay 0.35 → 0.25
+    * review 0.25 → 0.20
+    * correction load: new 0.15
+    * AI readiness: new 0.10
+  Overall score lands within ±5 of the 0.0.9 number on a typical repo,
+  but the breakdown is now five-dimensional. Historical trend
+  snapshots are re-computed under the new formula.
+
+### Not in this release (deliberate)
+- ❌ No composite "Survivability Score" tek rakamı (user feedback:
+  "iddialı", kategori-bazlı odak yeterli)
+- ❌ No tagline / README hero / pyproject description değişimi
+- ❌ No marketing manifesto
+
 ## [0.0.9] — 2026-05-17 (Pre-alpha)
 
 The "Fragile Velocity pattern detector" release. The signature pattern

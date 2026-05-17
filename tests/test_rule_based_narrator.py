@@ -107,6 +107,8 @@ def test_executive_summary_includes_resilience_band():
         ownership=30,
         decay=50,
         review=60,
+        correction_load=None,
+        ai_readiness=None,
         band="Fragile",
         summary="…",
     )
@@ -121,6 +123,7 @@ def test_executive_summary_includes_resilience_band():
 def test_turkish_language_uses_tr_labels():
     score = ResilienceScore(
         overall=42, ownership=30, decay=50, review=60,
+        correction_load=None, ai_readiness=None,
         band="Fragile", summary="…",
     )
     ctx = _empty_ctx(resilience=score)
@@ -203,6 +206,7 @@ def test_structural_note_added_when_critical_band_ownership_low():
     """0.0.5d — soften 'Critical' framing for single-maintainer projects."""
     score = ResilienceScore(
         overall=35, ownership=20, decay=70, review=None,
+        correction_load=None, ai_readiness=None,
         band="Critical", summary="…",
     )
     ctx = _empty_ctx(resilience=score)
@@ -216,6 +220,7 @@ def test_structural_note_omitted_when_ownership_healthy():
     even on a low overall score (the issue is elsewhere)."""
     score = ResilienceScore(
         overall=45, ownership=80, decay=10, review=40,
+        correction_load=None, ai_readiness=None,
         band="Fragile", summary="…",
     )
     ctx = _empty_ctx(resilience=score)

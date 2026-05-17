@@ -100,6 +100,23 @@ footer p { margin: 4px 0; }
   color: var(--muted);
   vertical-align: middle;
 }
+.sub.focus-here {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.1) inset;
+}
+.focus-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: var(--accent);
+  color: white;
+  vertical-align: middle;
+}
 .profile-tag { margin: 12px 2px 0; font-size: 13px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .profile-badge {
   display: inline-block;
@@ -459,13 +476,16 @@ details.architecture-details[open] summary { color: var(--accent); }
       <div class="band {{ band_class }}">{{ ctx.resilience.band }}</div>
     </div>
     <div class="subs">
-      {% for label, val, grade in [
-        ("Ownership", ctx.resilience.ownership, ctx.resilience.ownership_grade),
-        ("Decay", ctx.resilience.decay, ctx.resilience.decay_grade),
-        ("Review", ctx.resilience.review, ctx.resilience.review_grade)
+      {% set focus = ctx.resilience.focus_dimension() %}
+      {% for label, key, val, grade in [
+        ("Ownership", "ownership", ctx.resilience.ownership, ctx.resilience.ownership_grade),
+        ("Decay", "decay", ctx.resilience.decay, ctx.resilience.decay_grade),
+        ("Review", "review", ctx.resilience.review, ctx.resilience.review_grade),
+        ("Correction", "correction_load", ctx.resilience.correction_load, ctx.resilience.correction_load_grade),
+        ("AI Readiness", "ai_readiness", ctx.resilience.ai_readiness, ctx.resilience.ai_readiness_grade)
       ] %}
-      <div class="sub {% if val is none %}{% elif val >= 80 %}band-strong{% elif val >= 60 %}band-moderate{% elif val >= 40 %}band-fragile{% else %}band-critical{% endif %}">
-        <div class="label">{{ label }}</div>
+      <div class="sub {% if val is none %}{% elif val >= 80 %}band-strong{% elif val >= 60 %}band-moderate{% elif val >= 40 %}band-fragile{% else %}band-critical{% endif %}{% if focus == key %} focus-here{% endif %}">
+        <div class="label">{{ label }}{% if focus == key %} <span class="focus-tag" title="Weakest dimension — start here">FOCUS</span>{% endif %}</div>
         <div class="value">{% if val is none %}<span style="color:var(--muted);font-size:16px;font-weight:400;">no data</span>{% else %}{{ val }} <span class="letter-grade-sub">{{ grade }}</span>{% endif %}</div>
       </div>
       {% endfor %}

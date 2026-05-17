@@ -639,6 +639,8 @@ def scan(
         services,
         decays,
         review_stats=review_graph.file_stats if review_graph is not None else None,
+        correction_load_files=correction_report.files,
+        ai_readiness=ai_readiness,
     )
     band_color = {
         "Strong": "green",
