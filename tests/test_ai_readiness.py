@@ -20,6 +20,21 @@ def test_repo_level_detects_copilot_instructions():
     assert report.repo.agent_rules is True
 
 
+def test_repo_level_detects_dot_claude_directory():
+    """The .claude/ directory is the de-facto agent-rules home — a repo
+    with one (e.g. n8n) must not score 0/5 on agent rules."""
+    files = [".claude/settings.json", ".claude/commands/test.md", "src/main.py"]
+    report = AIReadinessEngine().detect(files)
+    assert report.repo.agent_rules is True
+    assert report.repo.skills is True  # .claude/commands/ counts as skills
+
+
+def test_repo_level_detects_clinerules_and_gemini():
+    for marker in (".clinerules/rules.md", ".gemini/config.yaml", "GEMINI.md"):
+        report = AIReadinessEngine().detect([marker, "src/main.py"])
+        assert report.repo.agent_rules is True, marker
+
+
 def test_repo_level_detects_specs_and_prompts():
     files = ["specs/v1.md", "prompts/release.md", "src/main.py"]
     report = AIReadinessEngine().detect(files)

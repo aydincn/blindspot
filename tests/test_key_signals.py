@@ -14,6 +14,7 @@ from blindspot.risk_models.ai_readiness import (
 from blindspot.risk_models.bus_factor import ServiceBusFactor
 from blindspot.risk_models.correction_load import FileCorrectionLoad
 from blindspot.risk_models.departure import DepartureReport
+from blindspot.risk_models.knowledge_decay import FileDecay
 from blindspot.resilience.score import ResilienceScore
 
 
@@ -158,6 +159,34 @@ def test_correction_load_low_grade_is_a_risk():
     sig = build_key_signals(ctx)[4]
     assert sig.healthy is False
     assert "4 files" in sig.headline
+
+
+def _decay_file(risk_level: str, score: float) -> FileDecay:
+    return FileDecay(
+        file="f.py", top_owner="a@x.com", top_owner_coverage=0.9,
+        owner_last_touch=datetime.now(UTC), days_since_owner_touch=120.0,
+        lines_changed_after=200, volatility=0.6, person_absence=0.6,
+        decay_score=score, risk_level=risk_level, projections={90: score},
+    )
+
+
+def test_decay_signal_counts_high_risk_not_just_critical():
+    """A file the decay table badges "high" (decay > 0.50) must register —
+    the pill used to only count "critical" (> 0.75) and stayed silent."""
+    ctx = _ctx(decay_top=(
+        _decay_file("high", 0.62),
+        _decay_file("high", 0.55),
+        _decay_file("medium", 0.40),
+    ))
+    sig = build_key_signals(ctx)[2]
+    assert not sig.healthy
+    assert "2 files" in sig.headline
+
+
+def test_decay_signal_healthy_when_only_medium():
+    ctx = _ctx(decay_top=(_decay_file("medium", 0.35), _decay_file("low", 0.1)))
+    sig = build_key_signals(ctx)[2]
+    assert sig.healthy
 
 
 def test_departure_signal_uses_worst_scenario():

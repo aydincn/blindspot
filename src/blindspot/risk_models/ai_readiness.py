@@ -31,13 +31,20 @@ _CATEGORIES = ("agent_rules", "specs", "prompts", "architecture", "skills")
 # is stripped before matching.
 _PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "agent_rules": (
-        re.compile(r"^(claude|agents|copilot-instructions)\.md$", re.IGNORECASE),
+        re.compile(r"^(claude|agents?|gemini|copilot-instructions)\.md$", re.IGNORECASE),
+        re.compile(r"^\.claude/", re.IGNORECASE),
         re.compile(r"^\.cursor/", re.IGNORECASE),
-        re.compile(r"^\.github/copilot-instructions\.md$", re.IGNORECASE),
+        re.compile(r"^\.clinerules", re.IGNORECASE),
+        re.compile(r"^\.gemini/", re.IGNORECASE),
+        re.compile(r"^\.continue/", re.IGNORECASE),
+        re.compile(r"^\.github/(copilot-instructions\.md|agents/)", re.IGNORECASE),
         re.compile(r"^\.aider", re.IGNORECASE),
         re.compile(r"^\.windsurf", re.IGNORECASE),
         re.compile(r"^\.codex", re.IGNORECASE),
         re.compile(r"^\.cody", re.IGNORECASE),
+        re.compile(r"^\.roo", re.IGNORECASE),
+        re.compile(r"^\.kilocode", re.IGNORECASE),
+        re.compile(r"^\.junie", re.IGNORECASE),
     ),
     "specs": (
         re.compile(r"^specs?/", re.IGNORECASE),
@@ -55,6 +62,7 @@ _PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "skills": (
         re.compile(r"^skills/", re.IGNORECASE),
         re.compile(r"^agents/", re.IGNORECASE),
+        re.compile(r"^\.claude/(skills|commands|agents)/", re.IGNORECASE),
     ),
 }
 

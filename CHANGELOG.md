@@ -3,6 +3,29 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.2] — 2026-05-20 (Pre-alpha)
+
+Two signals from the benchmark cohort were not discriminating —
+*Knowledge decay* read "ok" on all 10 repos and *AI-readable context*
+read "F" on all 10. Both are fixed here.
+
+### Fixed
+- **Knowledge decay signal ignored "high"-risk files.** The pill counted
+  only files with `decay_score >= 0.75` ("critical"), while the decay
+  table badges files "high" from 0.50. A file shown as high-risk in the
+  detail table left the pill claiming "No file is critically decayed" —
+  the same pill↔detail contradiction as the grade fix. The signal now
+  counts files the taxonomy badges "high" or "critical" (decay > 0.50).
+  In the cohort this surfaced real drift in pydantic-ai that 0.2.1
+  reported as healthy.
+- **AI-readable context detector missed common 2026 artifacts.** It did
+  not recognise `.claude/` (the de-facto agent-rules home), `.clinerules`,
+  `.gemini/`, `.continue/`, `.roo`, `.kilocode`, `.junie`, `GEMINI.md`,
+  or `.github/agents/`. Repos that clearly carry AI operational context
+  (n8n, cline, pydantic-ai all have `.claude/` or `.clinerules`) were
+  scored as if they had none. `.claude/{skills,commands,agents}/` now
+  also counts toward the skills category.
+
 ## [0.2.1] — 2026-05-20 (Pre-alpha)
 
 A 10-repo benchmark cohort scan (live PyPI 0.2.0) drove this release —

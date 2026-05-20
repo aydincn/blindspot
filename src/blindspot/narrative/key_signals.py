@@ -97,12 +97,19 @@ def _departure(ctx: "ReportContext") -> KeySignal:
 
 
 def _decay(ctx: "ReportContext") -> KeySignal:
-    critical = sum(1 for d in ctx.decay_top if d.decay_score >= 0.75)
+    """Count files the report's own taxonomy badges "high" or "critical"
+    (decay > 0.50), not an arbitrary 0.75 cutoff. A file shown as "high"
+    risk in the decay table must not leave the pill claiming nothing
+    decayed — that is the same pill↔detail contradiction as a risk
+    signal carrying an A grade."""
+    drifting = sum(
+        1 for d in ctx.decay_top if d.risk_level in ("critical", "high")
+    )
     grade = ctx.resilience.decay_grade if ctx.resilience else None
-    if critical == 0:
+    if drifting == 0:
         return KeySignal(
             name="Knowledge decay",
-            headline="No file is critically decayed",
+            headline="No file has drifted far from its owner",
             grade=grade,
             meaning="Owners are still close to the code they own.",
             healthy=True,
@@ -110,8 +117,9 @@ def _decay(ctx: "ReportContext") -> KeySignal:
     return KeySignal(
         name="Knowledge decay",
         headline=(
-            f"{critical} file{'' if critical == 1 else 's'} "
-            f"{'is' if critical == 1 else 'are'} critically decayed"
+            f"{drifting} file{'' if drifting == 1 else 's'} "
+            f"{'has' if drifting == 1 else 'have'} drifted from "
+            f"{'its' if drifting == 1 else 'their'} owner"
         ),
         grade=grade,
         meaning=(
