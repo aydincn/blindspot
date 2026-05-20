@@ -293,6 +293,7 @@ footer p { margin: 4px 0; }
 .trend-bar { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; max-width: 200px; }
 .trend-bar-fill { height: 100%; }
 .trend-delta { font-weight: 600; font-variant-numeric: tabular-nums; }
+.trend-window { color: var(--muted); font-size: 12px; }
 .delta-up { color: var(--healthy); }
 .delta-down { color: var(--critical); }
 .delta-flat { color: var(--muted); }
@@ -435,6 +436,10 @@ details.signal-detail > summary .sd-tag.sd-ok { background: #f0fdf4; color: var(
     <span class="overall-text">
       Resilience {{ ctx.resilience.overall }}/100 · {{ ctx.resilience.overall_grade }}
       {% if ctx.repo_profile %}· {{ ctx.repo_profile.replace("-", " ") }} profile{% endif %}
+      {% if ctx.trend and ctx.trend.snapshots and ctx.trend.delta_overall is not none %}
+      · <span class="trend-delta {% if ctx.trend.delta_overall > 0 %}delta-up{% elif ctx.trend.delta_overall < 0 %}delta-down{% else %}delta-flat{% endif %}">{% if ctx.trend.delta_overall > 0 %}▲ +{{ ctx.trend.delta_overall }}{% elif ctx.trend.delta_overall < 0 %}▼ {{ ctx.trend.delta_overall }}{% else %}▶ flat{% endif %}</span>
+      <span class="trend-window">over {{ ctx.trend.snapshots[0].days_ago }}d</span>
+      {% endif %}
     </span>
   </p>
   {% endif %}

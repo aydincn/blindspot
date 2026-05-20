@@ -3,6 +3,20 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.3] — 2026-05-20 (Pre-alpha)
+
+An independent review of the 0.2.2 report flagged one genuine
+regression from the 0.2.0 simplification: the resilience **trend**
+disappeared from the default report (the full table moved behind
+`--detailed`, with nothing left in default mode).
+
+### Changed
+- **Trend direction is back in default mode.** The executive brief's
+  overall line now carries a compact `▲ +N over Nd` / `▼ −N` indicator
+  next to the score and profile. The full historical table stays
+  behind `--detailed` — the at-a-glance direction is what an executive
+  needs; the table is the drill-down.
+
 ## [0.2.2] — 2026-05-20 (Pre-alpha)
 
 Two signals from the benchmark cohort were not discriminating —

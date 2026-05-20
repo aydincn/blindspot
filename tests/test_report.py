@@ -190,6 +190,38 @@ def test_executive_brief_renders_when_signals_present(make_repo):
     assert "Business implication" in html
 
 
+def test_executive_brief_shows_trend_direction(make_repo):
+    """0.2.3 — the trend direction (▲/▼ +N) is back in default mode, on
+    the brief's overall line; the full table stays behind --detailed."""
+    from datetime import timedelta
+    from blindspot.resilience.score import ResilienceScore
+    from blindspot.trend.engine import ResilienceTrend, TrendSnapshot
+
+    def _snap(days_ago: int, overall: int) -> TrendSnapshot:
+        score = ResilienceScore(
+            overall=overall, ownership=overall, decay=overall, review=None,
+            correction_load=None, ai_readiness=None, band="Moderate", summary="",
+        )
+        return TrendSnapshot(
+            as_of=datetime.now(UTC) - timedelta(days=days_ago),
+            days_ago=days_ago, score=score,
+        )
+
+    repo = make_repo(
+        [CommitSpec("Alice", "alice@x.com", "payment/main.py", "1\n", 5)]
+    )
+    ctx = replace(
+        _build_context(repo),
+        resilience=_snap(0, 62).score,  # overall-line needs a resilience score
+        trend=ResilienceTrend(snapshots=(_snap(90, 50), _snap(0, 62))),
+        business_implication="Test implication.",
+    )
+    html = ReportRenderer().render(ctx)
+    assert "trend-delta" in html
+    assert "▲ +12" in html
+    assert "over 90d" in html
+
+
 def test_executive_brief_absent_when_no_signals(make_repo):
     """Empty repo → no top_risks, no business_implication → no brief block."""
     repo = make_repo([])
