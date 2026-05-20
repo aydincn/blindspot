@@ -273,74 +273,6 @@ def test_correction_load_below_threshold_emits_nothing():
 
 
 # ---------------------------------------------------------------------------
-# AI-readiness gap rule (0.0.5a — U1 promoted to risk model)
-
-def _readiness_coverage(target, agent_rules=False, specs=False, prompts=False,
-                        architecture=False, skills=False):
-    from blindspot.risk_models.ai_readiness import AIReadinessCoverage
-    return AIReadinessCoverage(
-        target=target,
-        agent_rules=agent_rules,
-        specs=specs,
-        prompts=prompts,
-        architecture=architecture,
-        skills=skills,
-    )
-
-
-def _readiness_report(*services, repo=None):
-    from blindspot.risk_models.ai_readiness import AIReadinessReport
-    if repo is None:
-        repo = _readiness_coverage("(repo)")
-    return AIReadinessReport(repo=repo, services=tuple(services))
-
-
-def test_ai_readiness_gap_recommends_low_when_no_bus_factor_pressure():
-    # "docs" is in SUPPORT_SERVICES — use a real product service instead.
-    report = _readiness_report(_readiness_coverage("payment"))
-    ctx = RecommendationContext(ai_readiness=report)
-    actions = RecommendationEngine().recommend(ctx)
-    a = next(
-        a for a in actions
-        if a.category == ActionCategory.KNOWLEDGE_TRANSFER
-        and "AI-readable" in a.title
-    )
-    assert a.priority == ActionPriority.LOW
-    assert "payment" in a.target
-
-
-def test_ai_readiness_gap_priority_bumped_for_critical_bus_factor():
-    report = _readiness_report(_readiness_coverage("payment"))
-    svc = _service("payment", 8, "alice@x.com", 0.85)  # bus_factor=1, critical
-    ctx = RecommendationContext(services=(svc,), ai_readiness=report)
-    actions = RecommendationEngine().recommend(ctx)
-    a = next(
-        a for a in actions
-        if a.category == ActionCategory.KNOWLEDGE_TRANSFER
-        and "AI-readable" in a.title
-    )
-    assert a.priority == ActionPriority.MEDIUM
-    assert "Bus factor is 1" in a.description
-
-
-def test_ai_readiness_gap_skips_services_with_enough_coverage():
-    # 2/5 categories present → above threshold, no recommendation
-    cov = _readiness_coverage("docs", agent_rules=True, specs=True)
-    report = _readiness_report(cov)
-    ctx = RecommendationContext(ai_readiness=report)
-    actions = RecommendationEngine().recommend(ctx)
-    assert not any(
-        "AI-readable" in a.title for a in actions
-    )
-
-
-def test_ai_readiness_gap_no_readiness_report_emits_nothing():
-    ctx = RecommendationContext()
-    actions = RecommendationEngine().recommend(ctx)
-    assert not any("AI-readable" in a.title for a in actions)
-
-
-# ---------------------------------------------------------------------------
 # Service-bus-factor enrichment with service_top_files (0.0.5c)
 
 def test_service_bus_factor_includes_start_with_when_top_file_provided():
@@ -393,19 +325,6 @@ def test_product_service_still_fires_diversification_rule():
         and "payment" in a.target
         for a in actions
     )
-
-
-def test_support_services_skip_ai_readiness_gap():
-    # All in SUPPORT_SERVICES → no AI-readable recommendations.
-    report = _readiness_report(
-        _readiness_coverage(".github"),
-        _readiness_coverage("docs"),
-        _readiness_coverage("tests"),
-        _readiness_coverage("scripts"),
-    )
-    ctx = RecommendationContext(ai_readiness=report)
-    actions = RecommendationEngine().recommend(ctx)
-    assert not any("AI-readable" in a.title for a in actions)
 
 
 def test_tiny_services_skip_diversification_rule():
@@ -462,56 +381,3 @@ def test_service_bus_factor_no_cadence_for_small_service():
     a = next(a for a in actions if a.category == ActionCategory.OWNERSHIP_DIVERSIFICATION)
     assert "sprint" not in a.description.lower()
     assert "quarter" not in a.description.lower()
-
-
-def test_ai_readiness_gap_aggregates_multiple_low_priority_services():
-    """0.0.5e — many bare services collapse into one LOW line."""
-    report = _readiness_report(
-        _readiness_coverage("api"),
-        _readiness_coverage("auth"),
-        _readiness_coverage("billing"),
-        _readiness_coverage("orders"),
-    )
-    ctx = RecommendationContext(ai_readiness=report)
-    actions = RecommendationEngine().recommend(ctx)
-    ai_actions = [a for a in actions if "AI-readable" in a.title]
-    # Should aggregate into a single LOW action, not 4 separate ones.
-    assert len(ai_actions) == 1
-    a = ai_actions[0]
-    assert a.priority == ActionPriority.LOW
-    assert "across 4 services" in a.title
-    assert "api" in a.description
-    assert "auth" in a.description
-    assert "billing" in a.description
-    assert "orders" in a.description
-
-
-def test_ai_readiness_gap_critical_services_kept_individual():
-    """Critical compound risk (bus factor ≤ 1 + bare context) stays
-    individual even when other services are aggregated."""
-    report = _readiness_report(
-        _readiness_coverage("api"),     # plain LOW
-        _readiness_coverage("payment"),  # compound (will get critical svc)
-    )
-    payment_svc = _service("payment", 8, "alice@x.com", 0.85)  # bus_factor=1
-    api_svc = _service("api", 8, "alice@x.com", 0.5)  # bus_factor will be > 1
-    # _service helper always sets bus_factor=1, but we only check the
-    # bus_factor==1 path for payment by using bus_factor_by_service
-    # lookup. Make api look healthy by giving it 50% coverage so it falls
-    # below the rule's bf <= 1 path.
-    # Simpler: use only "payment" as critical, no api in services map.
-    ctx = RecommendationContext(
-        services=(payment_svc,),
-        ai_readiness=report,
-    )
-    actions = RecommendationEngine().recommend(ctx)
-    ai_actions = [a for a in actions if "AI-readable" in a.title]
-    # payment → individual MEDIUM (compound)
-    # api → aggregated LOW (only 1, so still a single line by name)
-    assert len(ai_actions) == 2
-    medium = [a for a in ai_actions if a.priority == ActionPriority.MEDIUM]
-    low = [a for a in ai_actions if a.priority == ActionPriority.LOW]
-    assert len(medium) == 1
-    assert "payment" in medium[0].target
-    assert len(low) == 1
-    assert "api" in low[0].target

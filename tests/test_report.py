@@ -207,7 +207,7 @@ def test_report_renders_four_group_headers(make_repo):
     html = ReportRenderer().render(ctx)
 
     assert 'class="group-title"' in html
-    assert "TL;DR" in html
+    assert "Overview" in html
     assert "People &amp; Ownership" in html
     assert "Knowledge State" in html
     assert "Process Quality" in html

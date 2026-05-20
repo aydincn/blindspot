@@ -53,12 +53,14 @@ def test_scan_uses_smart_service_granularity(make_repo, tmp_path) -> None:
     )
     output = tmp_path / "report.html"
     result = runner.invoke(
-        app, ["scan", str(repo), "--since-days", "30", "--output", str(output)]
+        app,
+        ["scan", str(repo), "--since-days", "30", "--detailed",
+         "--output", str(output)],
     )
     assert result.exit_code == 0
     html = output.read_text()
     # Service names should be the directories *inside* src/pkg/, not "src"
-    # or "pkg".
+    # or "pkg". (Service risk map lives in the --detailed sections.)
     assert "<code>risk_models</code>" in html
     assert "<code>actions</code>" in html
     assert "<code>report</code>" in html

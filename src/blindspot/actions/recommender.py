@@ -11,7 +11,6 @@ from blindspot.codeowners import CodeOwnersReport
 from blindspot.diff_analysis.classifier import classify_file
 from blindspot.review_graph.engine import FileReviewStats
 from blindspot.resilience.silos import SilosReport
-from blindspot.risk_models.ai_readiness import AIReadinessReport
 from blindspot.risk_models.bus_factor import FileBusFactor, ServiceBusFactor
 from blindspot.risk_models.correction_load import (
     AuthorCorrectionLoad,
@@ -31,7 +30,6 @@ class RecommendationContext:
     importance_map: dict[str, float] = field(default_factory=dict)
     correction_load_authors: tuple[AuthorCorrectionLoad, ...] = ()
     correction_load_files: tuple[FileCorrectionLoad, ...] = ()
-    ai_readiness: AIReadinessReport | None = None
     # service name → up to 3 highest-importance code files in that service,
     # ordered most important first. Lets the diversification rule turn a
     # giant "1589 files" number into a concrete "start with these 3" list
@@ -89,7 +87,6 @@ class RecommendationEngine:
     max_per_rule: int = 5
     importance_threshold: float = 0.005
     correction_load_high_threshold: float = 0.35
-    ai_readiness_min_coverage: int = 2
     support_services: frozenset[str] = SUPPORT_SERVICES
     # Services with fewer files than this don't generate a diversification
     # recommendation — "pair on bus factor 1 across 1 files" is meaningless.
@@ -114,7 +111,6 @@ class RecommendationEngine:
         actions.extend(self._reviewer_diversity(ctx))
         actions.extend(self._fast_approval(ctx))
         actions.extend(self._correction_load(ctx))
-        actions.extend(self._ai_readiness_gap(ctx))
         actions.extend(self._hidden_silos(ctx))
         actions.extend(self._codeowners(ctx))
         actions.sort(key=lambda a: (PRIORITY_ORDER[a.priority], a.category.value, a.target))
@@ -351,124 +347,6 @@ class RecommendationEngine:
                     pattern=FragilityPattern.FRAGILE_VELOCITY,
                 )
             )
-        return out[: self.max_per_rule]
-
-    def _ai_readiness_gap(self, ctx: RecommendationContext) -> list[RecommendedAction]:
-        """Flag services that lack AI-readable operational context.
-
-        Critical gaps (low coverage + bus factor ≤ 1) emit individual MEDIUM
-        recommendations — there, the gap compounds with knowledge
-        concentration and deserves its own punch-list line.
-
-        Non-critical gaps are *aggregated* into a single LOW
-        recommendation so repos with many bare services don't spam the
-        table with repetitive lines. The names are listed in the
-        description and evidence.
-        """
-        if ctx.ai_readiness is None:
-            return []
-        bus_factor_by_service = {s.service: s.bus_factor for s in ctx.services}
-        candidates = sorted(
-            (
-                c for c in ctx.ai_readiness.services
-                if c.coverage_count < self.ai_readiness_min_coverage
-                and c.target not in self.support_services
-            ),
-            key=lambda c: (c.coverage_count, c.target),
-        )
-        out: list[RecommendedAction] = []
-        regular: list = []
-
-        def _missing(c) -> list[str]:
-            m = []
-            if not c.agent_rules:
-                m.append("agent rules (CLAUDE.md, .cursor/, copilot-instructions)")
-            if not c.specs:
-                m.append("specs/")
-            if not c.prompts:
-                m.append("prompts/")
-            if not c.architecture:
-                m.append("architecture notes / ADRs")
-            if not c.skills:
-                m.append("skills/")
-            return m
-
-        for c in candidates:
-            bus = bus_factor_by_service.get(c.target)
-            if bus is not None and bus <= 1:
-                # Compound risk — keep it as its own MEDIUM line
-                missing = _missing(c)
-                out.append(
-                    RecommendedAction(
-                        priority=ActionPriority.MEDIUM,
-                        category=ActionCategory.KNOWLEDGE_TRANSFER,
-                        title=f"Add AI-readable operational context for '{c.target}'",
-                        description=(
-                            f"Service '{c.target}' has {c.coverage_count}/5 "
-                            f"AI-native context coverage. Missing: "
-                            f"{', '.join(missing)}. Bus factor is {bus} — the "
-                            "gap compounds with knowledge concentration, so "
-                            "AI-assisted onboarding can't soften an owner "
-                            "departure either."
-                        ),
-                        target=c.target,
-                        evidence=(
-                            f"coverage={c.coverage_count}/5, bus_factor={bus}"
-                        ),
-                    )
-                )
-            else:
-                regular.append(c)
-
-        # Aggregate the non-compound gaps into a single LOW line.
-        if regular:
-            if len(regular) == 1:
-                c = regular[0]
-                missing = _missing(c)
-                out.append(
-                    RecommendedAction(
-                        priority=ActionPriority.LOW,
-                        category=ActionCategory.KNOWLEDGE_TRANSFER,
-                        title=f"Add AI-readable operational context for '{c.target}'",
-                        description=(
-                            f"Service '{c.target}' has {c.coverage_count}/5 "
-                            f"AI-native context coverage. Missing: "
-                            f"{', '.join(missing)}. Adding any of these lets "
-                            "new contributors (human or AI) load context "
-                            "without spelunking through code."
-                        ),
-                        target=c.target,
-                        evidence=f"coverage={c.coverage_count}/5",
-                    )
-                )
-            else:
-                names = [c.target for c in regular]
-                preview = ", ".join(names[:5])
-                if len(names) > 5:
-                    preview += f", … (+{len(names) - 5} more)"
-                out.append(
-                    RecommendedAction(
-                        priority=ActionPriority.LOW,
-                        category=ActionCategory.KNOWLEDGE_TRANSFER,
-                        title=(
-                            f"Add AI-readable operational context across "
-                            f"{len(regular)} services"
-                        ),
-                        description=(
-                            f"{len(regular)} services carry fewer than "
-                            f"{self.ai_readiness_min_coverage}/5 AI-native "
-                            f"context categories: {preview}. Bulk-adding "
-                            "CLAUDE.md / specs / ADRs across these surfaces "
-                            "lets new contributors (human or AI) load context "
-                            "without spelunking through code."
-                        ),
-                        target=f"{len(regular)} services",
-                        evidence=(
-                            f"services={len(regular)}, "
-                            f"max_coverage={max(c.coverage_count for c in regular)}/5"
-                        ),
-                    )
-                )
         return out[: self.max_per_rule]
 
     def _hidden_silos(self, ctx: RecommendationContext) -> list[RecommendedAction]:

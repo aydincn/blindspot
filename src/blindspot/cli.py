@@ -851,7 +851,6 @@ def scan(
         importance_map=importance_map,
         correction_load_authors=correction_report.authors,
         correction_load_files=correction_report.files,
-        ai_readiness=ai_readiness,
         service_top_files=service_top_files,
         silos=silos_report,
     )

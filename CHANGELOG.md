@@ -60,6 +60,23 @@ one thing: tell a CTO where the organisational fragility is, in plain
 language, in one screen. Everything that doesn't serve that is behind
 `--detailed`.
 
+### Wording + scope follow-up (same release)
+- **"Executive brief — what a CTO needs in 90 seconds"** trimmed to
+  just **"Executive brief"**. The marketing tail added nothing.
+- **"TL;DR — Resilience score, top actions, trend"** group header is
+  now **"Overview"**. "TL;DR" is jargon; "Overview" says what it is.
+- **AI-readiness no longer emits recommendations.** It was producing
+  "Add CLAUDE.md / specs / ADRs to service X" — i.e. advice on how to
+  feed an AI, which isn't the product's job. The signal stays as a
+  *state observation only*: the "AI-readable context" key signal
+  reports what's there, the recommendation rule is removed entirely
+  (`_ai_readiness_gap`, `RecommendationContext.ai_readiness`,
+  `ai_readiness_min_coverage` all gone). Recommendations are now only
+  things blindspot derives from the data — never "add docs for the AI".
+- The sixth key signal is renamed **"AI readiness" → "AI-readable
+  context"** — it observes whether the repo carries the docs an AI (or
+  human) would load, it does not score how "ready" the team is.
+
 ## [0.1.0] — 2026-05-17 (Pre-alpha)
 
 The "5 temel kategori — odak görünürlüğü" release. The resilience

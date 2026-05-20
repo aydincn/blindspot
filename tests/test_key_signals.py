@@ -60,7 +60,7 @@ def test_six_signals_always_returned():
         "Knowledge decay",
         "Review depth",
         "Correction load",
-        "AI readiness",
+        "AI-readable context",
     ]
 
 

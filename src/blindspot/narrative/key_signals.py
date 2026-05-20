@@ -185,7 +185,7 @@ def _ai_readiness(ctx: "ReportContext") -> KeySignal:
     grade = ctx.resilience.ai_readiness_grade if ctx.resilience else None
     if ctx.ai_readiness is None:
         return KeySignal(
-            name="AI readiness",
+            name="AI-readable context",
             headline="Not assessed",
             grade=None,
             meaning="No file structure to measure AI-readable context.",
@@ -195,7 +195,7 @@ def _ai_readiness(ctx: "ReportContext") -> KeySignal:
     n = repo_cov.coverage_count
     if n >= 2:
         return KeySignal(
-            name="AI readiness",
+            name="AI-readable context",
             headline=f"Repo carries AI-readable operational context ({n}/5)",
             grade=grade,
             meaning=(
@@ -216,7 +216,7 @@ def _ai_readiness(ctx: "ReportContext") -> KeySignal:
     if not repo_cov.skills:
         missing.append("skills")
     return KeySignal(
-        name="AI readiness",
+        name="AI-readable context",
         headline=f"Repo lacks AI-readable operational context ({n}/5)",
         grade=grade,
         meaning=(
