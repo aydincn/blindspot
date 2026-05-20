@@ -21,6 +21,9 @@ CONFIG_DOTFILE_PREFIXES = (
     ".windsurf",
     ".tmuxinator",
     ".bundle",
+    ".claude",
+    ".config",
+    ".cache",
 )
 
 

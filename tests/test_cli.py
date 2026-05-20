@@ -81,6 +81,7 @@ def test_scan_with_multi_person_departure(make_repo, tmp_path) -> None:
         [
             "scan", str(repo), "--since-days", "30",
             "--simulate-departures", "alice@example.com,bob@example.com",
+            "--detailed",  # departure cards live in the detailed sections
             "--output", str(output),
         ],
     )

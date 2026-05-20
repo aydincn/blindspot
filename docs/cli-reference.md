@@ -53,7 +53,8 @@ report itself shows the exact setup steps. See
 |---|---|---|
 | `--check-codeowners` / `--no-check-codeowners` | on | Validate the repo's `CODEOWNERS` file (if present) against actual ownership. |
 | `--simulate-top-departures` | `3` | Add "what-if departure" scenario cards to the report for the top-N contributors by aggregate coverage. `0` disables it. |
-| `--simulate-departures` | `""` | Comma-separated emails for a single multi-person "what-if" scenario. Example: `--simulate-departures "alice@x.com,bob@x.com,carol@x.com"`. The combined card is rendered on top of the top-N scenarios and spans the full grid width. |
+| `--simulate-departures` | `""` | Comma-separated emails for a single multi-person "what-if" scenario. Example: `--simulate-departures "alice@x.com,bob@x.com,carol@x.com"`. The combined card is rendered on top of the top-N scenarios and spans the full grid width. Departure cards appear in the `--detailed` sections. |
+| `--detailed` | off | Include the deep-dive sections: knowledge graph, change-fear index, hidden silos, pattern detection, resilience trend, service risk map, departure cards, module dependency map. Off by default — the standard report is the executive summary plus six key signals, scoped to one screen. |
 
 The trend section (resilience snapshots at 90/60/30/0 days ago) is
 **always on** — no flag.

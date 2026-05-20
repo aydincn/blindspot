@@ -56,6 +56,7 @@ from blindspot.narrative import (
 from blindspot.narrative.business_implication import business_implication
 from blindspot.narrative.client import MissingAPIKey, NarrativeError, build_client
 from blindspot.narrative.exec_risks import select_top_risks
+from blindspot.narrative.key_signals import build_key_signals
 from blindspot.patterns import detect_all_patterns
 from blindspot.ownership import OwnershipEngine
 from blindspot.report import (
@@ -243,6 +244,13 @@ def scan(
         "github-actions, etc.) in ownership and recommendations. "
         "Off by default — automated commits inflate apparent contribution "
         "and produce nonsense advice like 'pair Release Bot on CHANGELOG'.",
+    ),
+    detailed: bool = typer.Option(
+        False, "--detailed",
+        help="Include the deep-dive sections (knowledge graph, change-fear "
+        "index, hidden silos, pattern detection, timeline, module map). "
+        "Off by default — the standard report is the executive summary "
+        "plus six core signals, scoped to fit one screen.",
     ),
     narrative_lang: str = typer.Option(
         "en",
@@ -902,7 +910,9 @@ def scan(
         top_risks=top_risks,
         business_implication=biz_implication,
         patterns=patterns,
+        detailed=detailed,
     )
+    ctx = replace(ctx, key_signals=build_key_signals(ctx))
 
     # Narrative — always-on. Cloud LLM if api_key configured, else
     # rule-based fallback (deterministic, in-process, no network).

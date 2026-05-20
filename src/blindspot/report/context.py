@@ -83,6 +83,13 @@ class ReportContext:
     # Pattern hits (0.0.9) — composite-signal recognitions
     # (Fragile Velocity, …). See patterns/.
     patterns: tuple = ()
+    # 0.2.0: when False (default) the report is executive summary + six
+    # core signals + actions only; deep-dive sections are gated behind
+    # the --detailed CLI flag.
+    detailed: bool = False
+    # 0.2.0: the six core "pill metrics" — each a single number + grade
+    # + one-line meaning. Built by narrative/key_signals.py.
+    key_signals: tuple = ()
 
     def label(self, email: str) -> str:
         name = self.names.get(email)

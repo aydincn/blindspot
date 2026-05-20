@@ -52,6 +52,10 @@ def _build_context(repo) -> ReportContext:
         critical_files=tuple(critical[:20]),
         decay_top=tuple(decays[:20]),
         decay_services=tuple(decay_services),
+        # Default to detailed=True so the existing section-presence tests
+        # keep exercising the deep-dive sections. Default-mode (--detailed
+        # off) behaviour has its own dedicated tests.
+        detailed=True,
     )
 
 
@@ -374,3 +378,57 @@ def test_escapes_user_supplied_content(make_repo):
 
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;" in html
+
+
+# ---------------------------------------------------------------------------
+# 0.2.0 — default-mode (--detailed off) report shape
+
+def test_default_mode_shows_key_signals(make_repo):
+    """Default report leads with the six key signals."""
+    from dataclasses import replace
+    from blindspot.narrative.key_signals import build_key_signals
+    repo = make_repo(
+        [
+            CommitSpec("Alice", "alice@x.com", "payment/main.py", "1\n", 5),
+            CommitSpec("Bob", "bob@x.com", "shared/util.py", "2\n", 4),
+        ]
+    )
+    ctx = _build_context(repo)
+    ctx = replace(ctx, detailed=False, key_signals=build_key_signals(ctx))
+    html = ReportRenderer().render(ctx)
+    assert "Key signals" in html
+    assert 'class="key-signal' in html
+
+
+def test_default_mode_hides_detail_sections(make_repo):
+    """--detailed off → deep-dive sections absent, key signals present."""
+    from dataclasses import replace
+    from blindspot.narrative.key_signals import build_key_signals
+    repo = make_repo(
+        [
+            CommitSpec("Alice", "alice@x.com", "payment/main.py", "1\n", 5),
+            CommitSpec("Bob", "bob@x.com", "shared/util.py", "2\n", 4),
+        ]
+    )
+    ctx = _build_context(repo)
+    ctx = replace(ctx, detailed=False, key_signals=build_key_signals(ctx))
+    html = ReportRenderer().render(ctx)
+    # Deep-dive section headers must be gone
+    assert "Service risk map" not in html
+    assert "Knowledge decay — top concerns" not in html
+    assert "People &amp; Ownership" not in html
+    assert "Architecture details" not in html
+
+
+def test_detailed_mode_restores_detail_sections(make_repo):
+    """--detailed on → deep-dive sections come back."""
+    repo = make_repo(
+        [
+            CommitSpec("Alice", "alice@x.com", "payment/main.py", "1\n", 5),
+            CommitSpec("Bob", "bob@x.com", "shared/util.py", "2\n", 4),
+        ]
+    )
+    ctx = _build_context(repo)  # detailed=True by default in helper
+    html = ReportRenderer().render(ctx)
+    assert "Service risk map" in html
+    assert "People &amp; Ownership" in html

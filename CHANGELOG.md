@@ -3,6 +3,52 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] — 2026-05-17 (Pre-alpha)
+
+The "geri dönüş" release. A head-of-engineering review of the v0.1.0
+report landed a blunt verdict: *akademik vibe, çok metrik metrik,
+anlamlandırmak zor.* It was right. Across 0.0.4 → 0.1.0 the report
+grew to 15+ sections — knowledge graphs, pattern cards, silo
+detection, change-fear, timeline events. The product drifted from its
+value proposition into a metric pile.
+
+0.2.0 returns to the value proposition: **six concrete questions, each
+with a one-number answer a CTO/VP reads in one glance.**
+
+### Changed
+- **Standard report is now six "key signals"** — each a single number
+  + letter grade + one-line plain-English meaning:
+    1. Ownership concentration — services on a single owner
+    2. Single-engineer dependency — files orphaned by a top departure
+    3. Knowledge decay — files the owner drifted away from
+    4. Review depth — files approved without scrutiny
+    5. Correction load — files with a heavy bugfix tail
+    6. AI readiness — services lacking AI-readable operational context
+  No formulas on the surface, no jargon. The executive summary and the
+  per-signal explanations stay — that was explicit feedback.
+- **Default report 1584 → ~630 lines** on a typical repo. One screen
+  of signal, not fifteen sections of detail.
+
+### New
+- **`--detailed` flag** — opt-in for the deep-dive sections (knowledge
+  graph, change-fear index, hidden silos, pattern detection, resilience
+  trend, service risk map, departure cards, module dependency map).
+  Off by default. The code for all of these is unchanged and fully
+  tested — it just no longer ships in the standard report.
+
+### Fixed
+- **AI-readiness false positive** — `.claude/`, `.config/`, `.cache/`
+  are now treated as tooling-config directories (joined the existing
+  `.cursor` / `.vscode` / `.idea` group). Saha test caught uv's top
+  recommendation being "Add AI-readable operational context for
+  `.claude`" — ironic, since `.claude` *is* the AI tooling directory.
+
+### Philosophy
+This is the last sprint of the simplification arc. The product does
+one thing: tell a CTO where the organisational fragility is, in plain
+language, in one screen. Everything that doesn't serve that is behind
+`--detailed`.
+
 ## [0.1.0] — 2026-05-17 (Pre-alpha)
 
 The "5 temel kategori — odak görünürlüğü" release. The resilience

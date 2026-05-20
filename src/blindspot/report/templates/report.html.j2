@@ -317,6 +317,30 @@ footer p { margin: 4px 0; }
 .departure-people { display: flex; flex-wrap: wrap; gap: 6px; }
 .departure-pill { background: #eef2ff; color: #4338ca; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; }
 .muted-suffix { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 4px; }
+.resilience-solo { display: flex; gap: 24px; align-items: stretch; }
+.key-signals { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.key-signal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.key-signal.ks-healthy { border-left-color: var(--healthy); }
+.key-signal.ks-risk { border-left-color: var(--high); }
+.key-signal .ks-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.key-signal .ks-name { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.key-signal .ks-grade {
+  font-size: 14px; font-weight: 700; padding: 0 8px; border-radius: 4px;
+  background: rgba(15, 23, 42, 0.05);
+}
+.key-signal .ks-grade-a { background: #f0fdf4; color: var(--healthy); }
+.key-signal .ks-grade-b { background: #f0fdf4; color: var(--healthy); }
+.key-signal .ks-grade-c { background: #ecfeff; color: var(--medium); }
+.key-signal .ks-grade-d { background: #fef3c7; color: var(--high); }
+.key-signal .ks-grade-f { background: #fef2f2; color: var(--critical); }
+.key-signal .ks-headline { font-size: 15px; font-weight: 600; line-height: 1.4; margin-bottom: 6px; color: var(--fg); }
+.key-signal .ks-meaning { font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 .pattern-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; background: #eef2ff; color: #4338ca; margin-right: 6px; }
 .confidence-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 .confidence-badge.confidence-high { background: #f0fdf4; color: var(--healthy); }
@@ -343,7 +367,7 @@ details.architecture-details summary {
 }
 details.architecture-details[open] summary { color: var(--accent); }
 </style>
-{% if (ctx.module_graph and ctx.module_graph.edges) or (ctx.knowledge_graph and ctx.knowledge_graph.edges) %}
+{% if ctx.detailed and ((ctx.module_graph and ctx.module_graph.edges) or (ctx.knowledge_graph and ctx.knowledge_graph.edges)) %}
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script>mermaid.initialize({startOnLoad: true, theme: 'neutral', flowchart: {curve: 'basis'}});</script>
 {% endif %}
@@ -407,7 +431,7 @@ details.architecture-details[open] summary { color: var(--accent); }
 </section>
 {% endif %}
 
-{% if ctx.patterns %}
+{% if ctx.patterns and ctx.detailed %}
 <section>
   <h2>Patterns detected</h2>
   <p class="note">
@@ -469,29 +493,14 @@ details.architecture-details[open] summary { color: var(--accent); }
 {% set band_class = "band-" ~ ctx.resilience.band | lower %}
 <section>
   <h2>Engineering Resilience Score</h2>
-  <div class="resilience">
+  <div class="resilience resilience-solo">
     <div class="overall">
       <div class="label">Overall</div>
       <div class="score {{ band_class }}">{{ ctx.resilience.overall }}<span style="font-size:22px;color:var(--muted);font-weight:500;">/100</span> <span class="letter-grade {{ band_class }}" title="Letter grade for the overall score">{{ ctx.resilience.overall_grade }}</span></div>
       <div class="band {{ band_class }}">{{ ctx.resilience.band }}</div>
     </div>
-    <div class="subs">
-      {% set focus = ctx.resilience.focus_dimension() %}
-      {% for label, key, val, grade in [
-        ("Ownership", "ownership", ctx.resilience.ownership, ctx.resilience.ownership_grade),
-        ("Decay", "decay", ctx.resilience.decay, ctx.resilience.decay_grade),
-        ("Review", "review", ctx.resilience.review, ctx.resilience.review_grade),
-        ("Correction", "correction_load", ctx.resilience.correction_load, ctx.resilience.correction_load_grade),
-        ("AI Readiness", "ai_readiness", ctx.resilience.ai_readiness, ctx.resilience.ai_readiness_grade)
-      ] %}
-      <div class="sub {% if val is none %}{% elif val >= 80 %}band-strong{% elif val >= 60 %}band-moderate{% elif val >= 40 %}band-fragile{% else %}band-critical{% endif %}{% if focus == key %} focus-here{% endif %}">
-        <div class="label">{{ label }}{% if focus == key %} <span class="focus-tag" title="Weakest dimension — start here">FOCUS</span>{% endif %}</div>
-        <div class="value">{% if val is none %}<span style="color:var(--muted);font-size:16px;font-weight:400;">no data</span>{% else %}{{ val }} <span class="letter-grade-sub">{{ grade }}</span>{% endif %}</div>
-      </div>
-      {% endfor %}
-    </div>
+    <p class="summary" style="margin:0;align-self:center;">{{ ctx.resilience.summary }}</p>
   </div>
-  <p class="summary">{{ ctx.resilience.summary }}</p>
   {% if ctx.repo_profile %}
   {% set profile_label = ({
     "single-maintainer": "Single-maintainer",
@@ -514,6 +523,29 @@ details.architecture-details[open] summary { color: var(--accent); }
     <span class="profile-note">{{ profile_note }}</span>
   </p>
   {% endif %}
+</section>
+{% endif %}
+
+{% if ctx.key_signals %}
+<section>
+  <h2>Key signals — the six questions</h2>
+  <p class="note">
+    Six concrete questions, each with a one-number answer. This is the
+    report. Everything below is supporting detail; run with
+    <code>--detailed</code> for the deep-dive sections.
+  </p>
+  <div class="key-signals">
+    {% for sig in ctx.key_signals %}
+    <div class="key-signal {% if sig.healthy %}ks-healthy{% else %}ks-risk{% endif %}">
+      <div class="ks-head">
+        <span class="ks-name">{{ sig.name }}</span>
+        {% if sig.grade %}<span class="ks-grade ks-grade-{{ sig.grade | lower }}">{{ sig.grade }}</span>{% endif %}
+      </div>
+      <div class="ks-headline">{{ sig.headline }}</div>
+      <div class="ks-meaning">{{ sig.meaning }}</div>
+    </div>
+    {% endfor %}
+  </div>
 </section>
 {% endif %}
 
@@ -565,7 +597,7 @@ details.architecture-details[open] summary { color: var(--accent); }
 </section>
 {% endif %}
 
-{% if ctx.trend and ctx.trend.snapshots %}
+{% if ctx.trend and ctx.trend.snapshots and ctx.detailed %}
 <section>
   <h2>Resilience trend</h2>
   <p class="note">
@@ -624,6 +656,7 @@ details.architecture-details[open] summary { color: var(--accent); }
 </section>
 {% endif %}
 
+{% if ctx.detailed %}
 <h1 class="group-title">People &amp; Ownership</h1>
 
 <section>
@@ -1031,6 +1064,7 @@ graph LR
   </section>
 </details>
 {% endif %}
+{% endif %}{# end ctx.detailed #}
 
 <footer>
   <p><strong>Methodology.</strong>
