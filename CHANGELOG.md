@@ -3,6 +3,43 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.1] — 2026-05-20 (Pre-alpha)
+
+A 10-repo benchmark cohort scan (live PyPI 0.2.0) drove this release —
+the field test surfaced report bugs, and the head-of-engineering
+follow-up was clear: *six metrics are right, but each one needs its
+detail breakdown back.*
+
+### Fixed
+- **Cloud narrative failed on macOS** — `--api-key` produced
+  `SSL: CERTIFICATE_VERIFY_FAILED` because `urllib` verified against
+  OpenSSL's (often empty) trust store. The narrative client now uses
+  the `certifi` CA bundle when available; `certifi` was added as a
+  dependency.
+- **Grade ↔ pill contradiction** — a *risk* key-signal could carry a
+  reassuring "A"/"B" letter grade (e.g. ollama: *Correction load · A ·
+  "10 files carry a heavy bugfix tail"*). The pill's red/green state
+  came from an absolute count while the grade came from a repo-wide
+  proportion. Now: correction load with an A/B grade flips the pill
+  green ("Correction load is low across the codebase"), and no risk
+  pill ever displays an A/B grade — symmetric with healthy pills never
+  showing an F.
+- **Singular/plural grammar** — "1 files are approved", "1 service
+  rest on a single owner" → "1 file is approved", "1 service rests".
+  Fixed across all six signals.
+
+### Changed
+- **Signal details are back, as per-signal collapsibles.** Each of the
+  six key signals now opens into its own `<details>` breakdown —
+  service risk map, departure scenarios, knowledge decay table, review
+  lineage, correction-load table, AI-readable-context coverage. Risk
+  signals are expanded by default; healthy ones stay collapsed. This
+  detail is always in the report (no longer behind `--detailed`) —
+  0.2.0 hid too much.
+- **`--detailed` now gates only the architecture deep-dive** —
+  knowledge graph, change-fear index, module dependency map — under a
+  single "Architecture & deep-dive" group.
+
 ## [0.2.0] — 2026-05-17 (Pre-alpha)
 
 The "geri dönüş" release. A head-of-engineering review of the v0.1.0

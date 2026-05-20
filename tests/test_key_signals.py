@@ -14,6 +14,7 @@ from blindspot.risk_models.ai_readiness import (
 from blindspot.risk_models.bus_factor import ServiceBusFactor
 from blindspot.risk_models.correction_load import FileCorrectionLoad
 from blindspot.risk_models.departure import DepartureReport
+from blindspot.resilience.score import ResilienceScore
 
 
 def _ctx(**overrides) -> ReportContext:
@@ -117,6 +118,45 @@ def test_correction_load_signal_counts_heavy_files():
     )
     sig = build_key_signals(_ctx(correction_load_files=files))[4]
     assert not sig.healthy
+    assert "4 files" in sig.headline
+
+
+def _resilience(correction: int) -> ResilienceScore:
+    return ResilienceScore(
+        overall=80, ownership=None, decay=None, review=None,
+        correction_load=correction, ai_readiness=None,
+        band="Strong", summary="",
+    )
+
+
+def test_correction_load_grade_a_keeps_pill_healthy():
+    """A risk pill must never carry an A: 36 hot files in a big repo with a
+    repo-wide A grade is statistically normal, not a fragility signal."""
+    files = tuple(
+        FileCorrectionLoad(
+            file=f"f{i}.py", total_commits=20, fix_commits=10,
+            revert_commits=2, correction_ratio=0.6, risk_level="critical",
+        )
+        for i in range(36)
+    )
+    ctx = _ctx(correction_load_files=files, resilience=_resilience(95))
+    sig = build_key_signals(ctx)[4]
+    assert sig.healthy is True
+    assert sig.grade is None  # healthy pills drop the grade
+    assert "heavy bugfix tail" not in sig.headline
+
+
+def test_correction_load_low_grade_is_a_risk():
+    files = tuple(
+        FileCorrectionLoad(
+            file=f"f{i}.py", total_commits=20, fix_commits=10,
+            revert_commits=2, correction_ratio=0.6, risk_level="critical",
+        )
+        for i in range(4)
+    )
+    ctx = _ctx(correction_load_files=files, resilience=_resilience(45))
+    sig = build_key_signals(ctx)[4]
+    assert sig.healthy is False
     assert "4 files" in sig.headline
 
 

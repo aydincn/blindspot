@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from blindspot import __version__
@@ -38,7 +39,8 @@ def _build_context(repo) -> ReportContext:
             additions += f.additions
             deletions += f.deletions
 
-    return ReportContext(
+    from blindspot.narrative.key_signals import build_key_signals
+    ctx = ReportContext(
         repo_path=str(repo),
         generated_at=datetime.now(UTC),
         since_days=365,
@@ -57,6 +59,9 @@ def _build_context(repo) -> ReportContext:
         # off) behaviour has its own dedicated tests.
         detailed=True,
     )
+    # The six signal-detail sections render off ctx.key_signals — every
+    # report the CLI builds carries them, so the helper does too.
+    return replace(ctx, key_signals=build_key_signals(ctx))
 
 
 def test_rule_based_narrative_shows_upgrade_hint(make_repo):
@@ -132,7 +137,7 @@ def test_renders_html_with_expected_sections(make_repo):
 
     assert "<title>blindspot" in html
     assert "Knowledge resilience report" in html
-    assert "Service risk map" in html
+    assert "service risk map" in html
     assert "Files with single ownership" in html
     assert "Knowledge decay" in html
     assert __version__ in html
@@ -195,8 +200,9 @@ def test_executive_brief_absent_when_no_signals(make_repo):
     assert '<section class="executive-brief">' not in html
 
 
-def test_report_renders_four_group_headers(make_repo):
-    """0.0.5a hygiene pass — sections grouped under 4 h1 headers."""
+def test_report_renders_group_headers(make_repo):
+    """0.2.0 report shape — Overview, Signal details, and (when --detailed)
+    Architecture & deep-dive."""
     repo = make_repo(
         [
             CommitSpec("Alice", "alice@x.com", "payment/main.py", "1\n", 5),
@@ -208,11 +214,9 @@ def test_report_renders_four_group_headers(make_repo):
 
     assert 'class="group-title"' in html
     assert "Overview" in html
-    assert "People &amp; Ownership" in html
-    assert "Knowledge State" in html
-    assert "Process Quality" in html
-    # Exactly 4 group headers (we don't want accidental duplication).
-    assert html.count('<h1 class="group-title">') == 4
+    assert "Signal details" in html
+    # --detailed is on in the helper, so the deep-dive header is present too.
+    assert "Architecture &amp; deep-dive" in html
 
 
 def test_removed_low_signal_sections_are_absent(make_repo):
@@ -243,7 +247,7 @@ def test_renders_empty_repo_gracefully(make_repo):
     html = ReportRenderer().render(ctx)
 
     assert "No services analyzed" in html
-    assert "No critical single-owner files" in html
+    assert "No file is critically decayed" in html
 
 
 def test_renders_departure_scenarios_for_top_contributors(make_repo):
@@ -266,7 +270,7 @@ def test_renders_departure_scenarios_for_top_contributors(make_repo):
     ctx = replace(base, departure_scenarios=scenarios, names=dict(ownership.names))
     html = ReportRenderer().render(ctx)
 
-    assert "Departure scenarios" in html
+    assert "departure scenarios" in html
     assert "If" in html and "alice@x.com" in html
     assert "If" in html and "bob@x.com" in html
     assert "Orphan files" in html
@@ -400,28 +404,27 @@ def test_default_mode_shows_key_signals(make_repo):
     assert 'class="key-signal' in html
 
 
-def test_default_mode_hides_detail_sections(make_repo):
-    """--detailed off → deep-dive sections absent, key signals present."""
-    from dataclasses import replace
-    from blindspot.narrative.key_signals import build_key_signals
+def test_default_mode_keeps_signal_details_hides_deep_dive(make_repo):
+    """0.2.x — the six signal-detail breakdowns are always present; only the
+    architecture deep-dive is gated behind --detailed."""
     repo = make_repo(
         [
             CommitSpec("Alice", "alice@x.com", "payment/main.py", "1\n", 5),
             CommitSpec("Bob", "bob@x.com", "shared/util.py", "2\n", 4),
         ]
     )
-    ctx = _build_context(repo)
-    ctx = replace(ctx, detailed=False, key_signals=build_key_signals(ctx))
+    ctx = replace(_build_context(repo), detailed=False)
     html = ReportRenderer().render(ctx)
-    # Deep-dive section headers must be gone
-    assert "Service risk map" not in html
-    assert "Knowledge decay — top concerns" not in html
-    assert "People &amp; Ownership" not in html
-    assert "Architecture details" not in html
+    # Per-signal detail breakdowns stay (collapsible, always rendered).
+    assert "Signal details" in html
+    assert "service risk map" in html
+    # Architecture deep-dive is gated off.
+    assert "Architecture &amp; deep-dive" not in html
+    assert "Module dependency map" not in html
 
 
-def test_detailed_mode_restores_detail_sections(make_repo):
-    """--detailed on → deep-dive sections come back."""
+def test_detailed_mode_restores_deep_dive(make_repo):
+    """--detailed on → architecture deep-dive sections come back."""
     repo = make_repo(
         [
             CommitSpec("Alice", "alice@x.com", "payment/main.py", "1\n", 5),
@@ -430,5 +433,5 @@ def test_detailed_mode_restores_detail_sections(make_repo):
     )
     ctx = _build_context(repo)  # detailed=True by default in helper
     html = ReportRenderer().render(ctx)
-    assert "Service risk map" in html
-    assert "People &amp; Ownership" in html
+    assert "service risk map" in html
+    assert "Architecture &amp; deep-dive" in html

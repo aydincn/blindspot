@@ -56,7 +56,10 @@ def _ownership(ctx: "ReportContext") -> KeySignal:
         )
     return KeySignal(
         name="Ownership concentration",
-        headline=f"{single} service{'s' if single != 1 else ''} rest on a single owner",
+        headline=(
+            f"{single} service{'' if single == 1 else 's'} "
+            f"rest{'s' if single == 1 else ''} on a single owner"
+        ),
         grade=grade,
         meaning=(
             "If that person is unavailable, no one else can confidently "
@@ -80,7 +83,10 @@ def _departure(ctx: "ReportContext") -> KeySignal:
         )
     return KeySignal(
         name="Single-engineer dependency",
-        headline=f"{worst} files orphan if the top contributor leaves",
+        headline=(
+            f"{worst} file{'' if worst == 1 else 's'} "
+            f"orphan{'s' if worst == 1 else ''} if the top contributor leaves"
+        ),
         grade=None,
         meaning=(
             "These files would have no confident owner the day that "
@@ -103,7 +109,10 @@ def _decay(ctx: "ReportContext") -> KeySignal:
         )
     return KeySignal(
         name="Knowledge decay",
-        headline=f"{critical} files are critically decayed",
+        headline=(
+            f"{critical} file{'' if critical == 1 else 's'} "
+            f"{'is' if critical == 1 else 'are'} critically decayed"
+        ),
         grade=grade,
         meaning=(
             "The owner stopped touching these while others kept changing "
@@ -136,7 +145,10 @@ def _review(ctx: "ReportContext") -> KeySignal:
         )
     return KeySignal(
         name="Review depth",
-        headline=f"{rubber} files are approved without scrutiny",
+        headline=(
+            f"{rubber} file{'' if rubber == 1 else 's'} "
+            f"{'is' if rubber == 1 else 'are'} approved without scrutiny"
+        ),
         grade=grade,
         meaning=(
             "Most approvals on these files land with no substantive "
@@ -147,6 +159,10 @@ def _review(ctx: "ReportContext") -> KeySignal:
 
 
 def _correction(ctx: "ReportContext") -> KeySignal:
+    """The pill follows the repo-wide proportion (the letter grade), not
+    an absolute file count. 36 hot files in a 10k-file repo is statistically
+    normal — not a fragility signal. A risk pill must never carry an A:
+    if the grade says correction load is fine, the pill stays green."""
     heavy = sum(
         1 for f in ctx.correction_load_files if f.correction_ratio >= 0.35
     )
@@ -161,13 +177,28 @@ def _correction(ctx: "ReportContext") -> KeySignal:
             meaning="Code ships and stays shipped — low rework pressure.",
             healthy=True,
         )
+    if grade in ("A", "B"):
+        return KeySignal(
+            name="Correction load",
+            headline="Correction load is low across the codebase",
+            grade=grade,
+            meaning=(
+                f"A handful of files ({heavy}) run a high fix/revert ratio, "
+                "but repo-wide rework pressure stays low."
+            ),
+            healthy=True,
+        )
     return KeySignal(
         name="Correction load",
-        headline=f"{heavy} files carry a heavy bugfix tail",
+        headline=(
+            f"{heavy} file{'' if heavy == 1 else 's'} "
+            f"carr{'ies' if heavy == 1 else 'y'} a heavy bugfix tail"
+        ),
         grade=grade,
         meaning=(
             "After each feature these files get a stream of fix/revert "
-            "commits — stability is paying for delivery pace."
+            "commits — see the Correction load table (--detailed) for the "
+            "exact surfaces; the top ones also appear in the actions list."
         ),
         healthy=False,
     )
@@ -230,11 +261,18 @@ def _ai_readiness(ctx: "ReportContext") -> KeySignal:
 def build_key_signals(ctx: "ReportContext") -> tuple[KeySignal, ...]:
     """Build the six core pill metrics, in fixed display order.
 
-    A grade only ever appears on a *risk* signal. A green "healthy"
-    pill carrying an "F" is self-contradictory — the grade comes from
-    the composite resilience sub-score, which measures a related but
-    not identical thing. On a healthy signal we drop the grade entirely:
-    the ✓ and the headline already say everything.
+    A pill's grade must agree with its colour. The grade comes from the
+    composite resilience sub-score, which measures a related but not
+    identical thing — so two mismatches are possible and both are
+    dropped:
+
+      * a green "healthy" pill carrying an "F" — drop the grade;
+      * a red "risk" pill carrying a reassuring "A"/"B" — drop the
+        grade, since a good letter next to a red pill reads as a
+        contradiction.
+
+    The ✓/✗ and the headline already carry the message; a contradictory
+    grade only erodes trust.
     """
     signals = (
         _ownership(ctx),
@@ -244,10 +282,13 @@ def build_key_signals(ctx: "ReportContext") -> tuple[KeySignal, ...]:
         _correction(ctx),
         _ai_readiness(ctx),
     )
-    return tuple(
-        s if not s.healthy else replace(s, grade=None)
-        for s in signals
-    )
+
+    def _present(s: KeySignal) -> KeySignal:
+        if s.healthy or s.grade in ("A", "B"):
+            return replace(s, grade=None)
+        return s
+
+    return tuple(_present(s) for s in signals)
 
 
 __all__ = ["KeySignal", "build_key_signals"]

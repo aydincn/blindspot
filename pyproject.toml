@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "blindspot"
-version = "0.2.0"
+version = "0.2.1"
 description = "The bus factor for the AI era. Map team knowledge blindspots before someone leaves."
 readme = "README.md"
 license = { text = "MIT" }
@@ -31,6 +31,7 @@ dependencies = [
     "pyyaml>=6.0",
     "pydantic>=2.5",
     "rich>=13.7",
+    "certifi>=2024.2",
 ]
 
 [project.optional-dependencies]

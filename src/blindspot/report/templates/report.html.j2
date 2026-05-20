@@ -366,6 +366,45 @@ details.architecture-details summary {
   border-bottom: 1px solid var(--border);
 }
 details.architecture-details[open] summary { color: var(--accent); }
+details.signal-detail {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+details.signal-detail > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 14px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+details.signal-detail > summary::-webkit-details-marker { display: none; }
+details.signal-detail > summary::before {
+  content: "▸";
+  color: var(--muted);
+  font-size: 12px;
+}
+details.signal-detail[open] > summary::before { content: "▾"; }
+details.signal-detail[open] > summary { border-bottom: 1px solid var(--border); }
+details.signal-detail > summary .sd-tag {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+details.signal-detail > summary .sd-tag.sd-risk { background: #fef2f2; color: var(--critical); }
+details.signal-detail > summary .sd-tag.sd-ok { background: #f0fdf4; color: var(--healthy); }
+.signal-detail-body { padding: 16px 18px 4px; }
+.signal-detail-body table { margin-bottom: 8px; }
+.signal-detail-body .note:first-child { margin-top: 0; }
 </style>
 {% if ctx.detailed and ((ctx.module_graph and ctx.module_graph.edges) or (ctx.knowledge_graph and ctx.knowledge_graph.edges)) %}
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
@@ -531,8 +570,9 @@ details.architecture-details[open] summary { color: var(--accent); }
   <h2>Key signals — the six questions</h2>
   <p class="note">
     Six concrete questions, each with a one-number answer. This is the
-    report. Everything below is supporting detail; run with
-    <code>--detailed</code> for the deep-dive sections.
+    report. Each signal opens up below into the files, services and people
+    behind its number — run with <code>--detailed</code> for the
+    architecture deep-dive.
   </p>
   <div class="key-signals">
     {% for sig in ctx.key_signals %}
@@ -656,65 +696,73 @@ details.architecture-details[open] summary { color: var(--accent); }
 </section>
 {% endif %}
 
-{% if ctx.detailed %}
-<h1 class="group-title">People &amp; Ownership</h1>
+{% if ctx.key_signals %}
+<h1 class="group-title">Signal details</h1>
+<p class="note">
+  Each signal above, opened up — the files, services and people behind the
+  headline number. Risk signals are expanded by default; healthy ones stay
+  collapsed.
+</p>
 
-<section>
-  <h2>Service risk map</h2>
-  <p class="note">
-    Bus factor measures how many people would need to leave before knowledge of a service is critically lost.
-    A bus factor of 1 means a single person carries the service.
-  </p>
-  {% if ctx.services %}
-  <table>
-    <thead><tr>
-      <th>Service</th><th class="num">Files</th><th class="num">Bus factor</th>
-      <th>Risk</th><th>Top owner</th><th class="num">Their coverage</th>
-    </tr></thead>
-    <tbody>
-    {% for s in ctx.services %}
-      <tr>
-        <td><code>{{ s.service }}</code></td>
-        <td class="num">{{ s.file_count }}</td>
-        <td class="num">{{ s.bus_factor }}</td>
-        <td><span class="badge {{ s.risk_level }}">{{ s.risk_level }}</span></td>
-        <td>{% if s.top_owners %}{{ ctx.label(s.top_owners[0][0]) }}{% else %}—{% endif %}</td>
-        <td class="num">{% if s.top_owners %}{{ s.top_owners[0][1] | pct }}{% else %}—{% endif %}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <div class="empty">No services analyzed in this window.</div>
-  {% endif %}
-</section>
+{# 1 — Ownership concentration #}
+<details class="signal-detail"{% if not ctx.key_signals[0].healthy %} open{% endif %}>
+  <summary>Ownership concentration — service risk map
+    <span class="sd-tag {% if ctx.key_signals[0].healthy %}sd-ok{% else %}sd-risk{% endif %}">{% if ctx.key_signals[0].healthy %}healthy{% else %}risk{% endif %}</span>
+  </summary>
+  <div class="signal-detail-body">
+    <p class="note">
+      Bus factor measures how many people would need to leave before
+      knowledge of a service is critically lost. A bus factor of 1 means a
+      single person carries the service.
+    </p>
+    {% if ctx.services %}
+    <table>
+      <thead><tr>
+        <th>Service</th><th class="num">Files</th><th class="num">Bus factor</th>
+        <th>Risk</th><th>Top owner</th><th class="num">Their coverage</th>
+      </tr></thead>
+      <tbody>
+      {% for s in ctx.services %}
+        <tr>
+          <td><code>{{ s.service }}</code></td>
+          <td class="num">{{ s.file_count }}</td>
+          <td class="num">{{ s.bus_factor }}</td>
+          <td><span class="badge {{ s.risk_level }}">{{ s.risk_level }}</span></td>
+          <td>{% if s.top_owners %}{{ ctx.label(s.top_owners[0][0]) }}{% else %}—{% endif %}</td>
+          <td class="num">{% if s.top_owners %}{{ s.top_owners[0][1] | pct }}{% else %}—{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">No services analyzed in this window.</div>
+    {% endif %}
+    {% if ctx.critical_files %}
+    <h3 style="margin-top:20px;font-size:14px;font-weight:600;color:#475569;">Files with single ownership</h3>
+    <p class="note">Entirely owned by one person — the most acute knowledge risk.</p>
+    <table>
+      <thead><tr><th>File</th><th>Owner</th><th class="num">Coverage</th></tr></thead>
+      <tbody>
+      {% for f in ctx.critical_files %}
+        <tr>
+          <td><code class="path">{{ f.file }}</code></td>
+          <td>{{ ctx.label(f.top_owners[0][0]) }}</td>
+          <td class="num"><span class="badge critical">{{ f.top_owners[0][1] | pct }}</span></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</details>
 
-<section>
-  <h2>Files with single ownership</h2>
-  <p class="note">
-    These files are entirely owned by one person. They are the most acute knowledge risk.
-  </p>
-  {% if ctx.critical_files %}
-  <table>
-    <thead><tr><th>File</th><th>Owner</th><th class="num">Coverage</th></tr></thead>
-    <tbody>
-    {% for f in ctx.critical_files %}
-      <tr>
-        <td><code class="path">{{ f.file }}</code></td>
-        <td>{{ ctx.label(f.top_owners[0][0]) }}</td>
-        <td class="num"><span class="badge critical">{{ f.top_owners[0][1] | pct }}</span></td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <div class="empty">No critical single-owner files detected.</div>
-  {% endif %}
-</section>
-
-{% if ctx.departure_scenarios %}
-<section>
-  <h2>Departure scenarios — what we lose if one person leaves</h2>
+{# 2 — Single-engineer dependency #}
+<details class="signal-detail"{% if not ctx.key_signals[1].healthy %} open{% endif %}>
+  <summary>Single-engineer dependency — departure scenarios
+    <span class="sd-tag {% if ctx.key_signals[1].healthy %}sd-ok{% else %}sd-risk{% endif %}">{% if ctx.key_signals[1].healthy %}healthy{% else %}risk{% endif %}</span>
+  </summary>
+  <div class="signal-detail-body">
+  {% if ctx.departure_scenarios %}
   <p class="note">
     For each of the top contributors by aggregate ownership coverage, this
     is what would happen if they left tomorrow: how many files lose their
@@ -776,8 +824,230 @@ details.architecture-details[open] summary { color: var(--accent); }
     </div>
     {% endfor %}
   </div>
-</section>
-{% endif %}
+  {% else %}
+  <div class="empty">No contributor's departure orphans critical files.</div>
+  {% endif %}
+  </div>
+</details>
+
+{# 3 — Knowledge decay #}
+<details class="signal-detail"{% if not ctx.key_signals[2].healthy %} open{% endif %}>
+  <summary>Knowledge decay — top concerns
+    <span class="sd-tag {% if ctx.key_signals[2].healthy %}sd-ok{% else %}sd-risk{% endif %}">{% if ctx.key_signals[2].healthy %}healthy{% else %}risk{% endif %}</span>
+  </summary>
+  <div class="signal-detail-body">
+  <p class="note">
+    Decay rises when an owner stops touching a file and others have been changing it.
+    The 90-day projection shows the trajectory if nothing changes.
+  </p>
+  {% if ctx.decay_top %}
+  <table>
+    <thead><tr>
+      <th>File</th><th>Top owner</th>
+      <th class="num">Days since touch</th>
+      <th class="num">Decay score</th>
+      <th>Risk</th>
+      <th class="num">90-day projection</th>
+    </tr></thead>
+    <tbody>
+    {% for d in ctx.decay_top %}
+      <tr>
+        <td><code class="path">{{ d.file }}</code></td>
+        <td>{{ ctx.label(d.top_owner) }}</td>
+        <td class="num">{{ d.days_since_owner_touch | days }}</td>
+        <td class="num">{{ d.decay_score | pct }}</td>
+        <td><span class="badge {{ d.risk_level }}">{{ d.risk_level }}</span></td>
+        <td class="num">{{ d.projections[90] | pct }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No file is critically decayed.</div>
+  {% endif %}
+  </div>
+</details>
+
+{# 4 — Review depth #}
+<details class="signal-detail"{% if not ctx.key_signals[3].healthy %} open{% endif %}>
+  <summary>Review depth — review lineage
+    <span class="sd-tag {% if ctx.key_signals[3].healthy %}sd-ok{% else %}sd-risk{% endif %}">{% if ctx.key_signals[3].healthy %}healthy{% else %}risk{% endif %}</span>
+  </summary>
+  <div class="signal-detail-body">
+  {% if ctx.reviews_enabled %}
+  <p class="note">
+    Review data fetched from GitHub ({{ ctx.pr_count }} PRs analyzed{% if ctx.pr_truncated %}, partial — rate limit hit{% endif %}).
+    A rubber-stamp ratio is the share of approvals on a file that arrived without a single review comment.
+    Reviewer diversity measures whether several people share the review load.
+  </p>
+  <h3 style="margin-top:16px;font-size:14px;font-weight:600;color:#475569;">Files with highest rubber-stamp ratio</h3>
+  {% if ctx.top_rubber_stamps %}
+  <table>
+    <thead><tr>
+      <th>File</th>
+      <th class="num">Reviewers</th>
+      <th class="num">Reviews</th>
+      <th class="num">Comments</th>
+      <th class="num">Rubber-stamp</th>
+    </tr></thead>
+    <tbody>
+    {% for s in ctx.top_rubber_stamps %}
+      <tr>
+        <td><code class="path">{{ s.file }}</code></td>
+        <td class="num">{{ s.unique_reviewers }}</td>
+        <td class="num">{{ s.total_reviews }}</td>
+        <td class="num">{{ s.total_comments }}</td>
+        <td class="num"><span class="badge {% if s.rubber_stamp_ratio >= 0.8 %}critical{% elif s.rubber_stamp_ratio >= 0.5 %}high{% else %}medium{% endif %}">{{ s.rubber_stamp_ratio | pct }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No rubber-stamp patterns detected.</div>
+  {% endif %}
+  <h3 style="margin-top:20px;font-size:14px;font-weight:600;color:#475569;">Files with lowest reviewer diversity</h3>
+  {% if ctx.low_diversity_files %}
+  <table>
+    <thead><tr>
+      <th>File</th>
+      <th class="num">Reviewers</th>
+      <th class="num">Reviews</th>
+      <th class="num">Diversity</th>
+    </tr></thead>
+    <tbody>
+    {% for s in ctx.low_diversity_files %}
+      <tr>
+        <td><code class="path">{{ s.file }}</code></td>
+        <td class="num">{{ s.unique_reviewers }}</td>
+        <td class="num">{{ s.total_reviews }}</td>
+        <td class="num"><span class="badge {% if s.diversity_hhi < 0.2 %}critical{% elif s.diversity_hhi < 0.5 %}high{% else %}medium{% endif %}">{{ s.diversity_hhi | pct }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No low-diversity files detected.</div>
+  {% endif %}
+  {% elif ctx.detected_remote %}
+  <div class="notice-box">
+    🔌 <strong>Review metrics unavailable for this scan.</strong>
+    {% if ctx.detected_remote == "github" %}
+    A GitHub remote was detected, but no credentials were available.
+    Enable it once and re-run the scan to unlock rubber-stamp ratio,
+    reviewer diversity, fast-approval detection, and the PR activity mix:
+    <pre>gh auth login                          # uses gh CLI (recommended)</pre>
+    or pass a token directly:
+    <pre>--github-token ghp_...</pre>
+    or add it to <code>.blindspot.yaml</code>:
+    <pre>github:
+  token: ghp_...</pre>
+    {% elif ctx.detected_remote == "bitbucket" %}
+    A Bitbucket Cloud remote was detected, but no credentials were
+    configured. Bitbucket Cloud has no anonymous access, so review
+    metrics need an Atlassian API token (or legacy app password):
+    <pre>--bitbucket-username you@email.com --bitbucket-app-password ATATT3...</pre>
+    or add a block to <code>.blindspot.yaml</code>:
+    <pre>bitbucket:
+  username: you@email.com
+  app_password: ATATT3...</pre>
+    Create the token at <code>id.atlassian.com → API tokens</code> with
+    <code>read:pullrequest:bitbucket</code> + <code>read:repository:bitbucket</code> scopes.
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="empty">No remote detected — review depth needs a GitHub or Bitbucket remote.</div>
+  {% endif %}
+  </div>
+</details>
+
+{# 5 — Correction load #}
+<details class="signal-detail"{% if not ctx.key_signals[4].healthy %} open{% endif %}>
+  <summary>Correction load — files with a bugfix tail
+    <span class="sd-tag {% if ctx.key_signals[4].healthy %}sd-ok{% else %}sd-risk{% endif %}">{% if ctx.key_signals[4].healthy %}healthy{% else %}risk{% endif %}</span>
+  </summary>
+  <div class="signal-detail-body">
+  {% if ctx.correction_load_files %}
+  <p class="note">
+    Share of recent commits to each file that are follow-up fixes or reverts.
+    A high ratio is observable evidence of <em>stability debt</em> — work is
+    shipping but corrections are paying for it. Look at the surface, not the
+    person.
+  </p>
+  <table>
+    <thead><tr>
+      <th>File</th>
+      <th class="num">Total commits</th>
+      <th class="num">Fixes</th>
+      <th class="num">Reverts</th>
+      <th class="num">Correction ratio</th>
+      <th>Risk</th>
+    </tr></thead>
+    <tbody>
+    {% for f in ctx.correction_load_files[:15] %}
+      <tr>
+        <td><code class="path">{{ f.file }}</code></td>
+        <td class="num">{{ f.total_commits }}</td>
+        <td class="num">{{ f.fix_commits }}</td>
+        <td class="num">{{ f.revert_commits }}</td>
+        <td class="num">{{ f.correction_ratio | pct }}</td>
+        <td><span class="badge {{ f.risk_level }}">{{ f.risk_level }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No correction-load data for this window.</div>
+  {% endif %}
+  </div>
+</details>
+
+{# 6 — AI-readable context #}
+<details class="signal-detail"{% if not ctx.key_signals[5].healthy %} open{% endif %}>
+  <summary>AI-readable context — operational docs coverage
+    <span class="sd-tag {% if ctx.key_signals[5].healthy %}sd-ok{% else %}sd-risk{% endif %}">{% if ctx.key_signals[5].healthy %}healthy{% else %}risk{% endif %}</span>
+  </summary>
+  <div class="signal-detail-body">
+  {% if ctx.ai_readiness %}
+  <p class="note">
+    Coverage of AI-readable organizational memory — agent rules, specs,
+    prompts, architecture decisions, skills. The repo-root row is what the
+    signal grades; per-service rows are shown for context. This is not an
+    AI-generated-code detector.
+  </p>
+  <table>
+    <thead><tr>
+      <th>Surface</th>
+      <th>Agent rules</th>
+      <th>Specs</th>
+      <th>Prompts</th>
+      <th>Architecture</th>
+      <th>Skills</th>
+      <th class="num">Coverage</th>
+    </tr></thead>
+    <tbody>
+      {% set rows = [ctx.ai_readiness.repo] + (ctx.ai_readiness.services | list)[:10] %}
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.target }}</td>
+        <td>{% if r.agent_rules %}✓{% else %}—{% endif %}</td>
+        <td>{% if r.specs %}✓{% else %}—{% endif %}</td>
+        <td>{% if r.prompts %}✓{% else %}—{% endif %}</td>
+        <td>{% if r.architecture %}✓{% else %}—{% endif %}</td>
+        <td>{% if r.skills %}✓{% else %}—{% endif %}</td>
+        <td class="num">{{ (r.coverage_ratio * 100) | round(0) | int }}%</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No file structure to assess AI-readable context.</div>
+  {% endif %}
+  </div>
+</details>
+{% endif %}{# end ctx.key_signals #}
+
+{% if ctx.detailed %}
+<h1 class="group-title">Architecture &amp; deep-dive</h1>
 
 {% if ctx.knowledge_graph and ctx.knowledge_graph.edges %}
 <section>
@@ -808,41 +1078,6 @@ classDef service fill:#f0fdf4,stroke:#16a34a,stroke-width:1px,color:#14532d;
   </div>
 </section>
 {% endif %}
-
-<h1 class="group-title">Knowledge State</h1>
-
-<section>
-  <h2>Knowledge decay — top concerns</h2>
-  <p class="note">
-    Decay rises when an owner stops touching a file and others have been changing it.
-    The 90-day projection shows the trajectory if nothing changes.
-  </p>
-  {% if ctx.decay_top %}
-  <table>
-    <thead><tr>
-      <th>File</th><th>Top owner</th>
-      <th class="num">Days since touch</th>
-      <th class="num">Decay score</th>
-      <th>Risk</th>
-      <th class="num">90-day projection</th>
-    </tr></thead>
-    <tbody>
-    {% for d in ctx.decay_top %}
-      <tr>
-        <td><code class="path">{{ d.file }}</code></td>
-        <td>{{ ctx.label(d.top_owner) }}</td>
-        <td class="num">{{ d.days_since_owner_touch | days }}</td>
-        <td class="num">{{ d.decay_score | pct }}</td>
-        <td><span class="badge {{ d.risk_level }}">{{ d.risk_level }}</span></td>
-        <td class="num">{{ d.projections[90] | pct }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <div class="empty">No decay signals detected.</div>
-  {% endif %}
-</section>
 
 {% if ctx.change_fear and ctx.change_fear.files %}
 <section>
@@ -875,174 +1110,9 @@ classDef service fill:#f0fdf4,stroke:#16a34a,stroke-width:1px,color:#14532d;
 </section>
 {% endif %}
 
-{% if ctx.ai_readiness %}
-<section>
-  <h2>AI-native operational context</h2>
-  <p class="note">
-    Coverage of AI-readable organizational memory — agent rules, specs,
-    prompts, architecture decisions, skills. Higher coverage means new
-    contributors (human or AI) have more to load. This is not an
-    AI-generated-code detector.
-  </p>
-  <table>
-    <thead><tr>
-      <th>Surface</th>
-      <th>Agent rules</th>
-      <th>Specs</th>
-      <th>Prompts</th>
-      <th>Architecture</th>
-      <th>Skills</th>
-      <th class="num">Coverage</th>
-    </tr></thead>
-    <tbody>
-      {% set rows = [ctx.ai_readiness.repo] + (ctx.ai_readiness.services | list)[:10] %}
-      {% for r in rows %}
-      <tr>
-        <td>{{ r.target }}</td>
-        <td>{% if r.agent_rules %}✓{% else %}—{% endif %}</td>
-        <td>{% if r.specs %}✓{% else %}—{% endif %}</td>
-        <td>{% if r.prompts %}✓{% else %}—{% endif %}</td>
-        <td>{% if r.architecture %}✓{% else %}—{% endif %}</td>
-        <td>{% if r.skills %}✓{% else %}—{% endif %}</td>
-        <td class="num">{{ (r.coverage_ratio * 100) | round(0) | int }}%</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</section>
-{% endif %}
-
-<h1 class="group-title">Process Quality</h1>
-
-{% if not ctx.reviews_enabled and ctx.detected_remote %}
-<section>
-  <h2>Review lineage</h2>
-  <div class="notice-box">
-    🔌 <strong>Review metrics unavailable for this scan.</strong>
-    {% if ctx.detected_remote == "github" %}
-    A GitHub remote was detected, but no credentials were available.
-    Enable it once and re-run the scan to unlock rubber-stamp ratio,
-    reviewer diversity, fast-approval detection, and the PR activity mix:
-    <pre>gh auth login                          # uses gh CLI (recommended)</pre>
-    or pass a token directly:
-    <pre>--github-token ghp_...</pre>
-    or add it to <code>.blindspot.yaml</code>:
-    <pre>github:
-  token: ghp_...</pre>
-    {% elif ctx.detected_remote == "bitbucket" %}
-    A Bitbucket Cloud remote was detected, but no credentials were
-    configured. Bitbucket Cloud has no anonymous access, so review
-    metrics need an Atlassian API token (or legacy app password):
-    <pre>--bitbucket-username you@email.com --bitbucket-app-password ATATT3...</pre>
-    or add a block to <code>.blindspot.yaml</code>:
-    <pre>bitbucket:
-  username: you@email.com
-  app_password: ATATT3...</pre>
-    Create the token at <code>id.atlassian.com → API tokens</code> with
-    <code>read:pullrequest:bitbucket</code> + <code>read:repository:bitbucket</code> scopes.
-    {% endif %}
-  </div>
-</section>
-{% endif %}
-
-{% if ctx.reviews_enabled %}
-<section>
-  <h2>Review lineage</h2>
-  <p class="note">
-    Review data fetched from GitHub ({{ ctx.pr_count }} PRs analyzed{% if ctx.pr_truncated %}, partial — rate limit hit{% endif %}).
-    A rubber-stamp ratio is the share of approvals on a file that arrived without a single review comment.
-    Reviewer diversity measures whether several people share the review load.
-  </p>
-
-  <h3 style="margin-top:24px;font-size:15px;font-weight:600;color:#475569;">Files with highest rubber-stamp ratio</h3>
-  {% if ctx.top_rubber_stamps %}
-  <table>
-    <thead><tr>
-      <th>File</th>
-      <th class="num">Reviewers</th>
-      <th class="num">Reviews</th>
-      <th class="num">Comments</th>
-      <th class="num">Rubber-stamp</th>
-    </tr></thead>
-    <tbody>
-    {% for s in ctx.top_rubber_stamps %}
-      <tr>
-        <td><code class="path">{{ s.file }}</code></td>
-        <td class="num">{{ s.unique_reviewers }}</td>
-        <td class="num">{{ s.total_reviews }}</td>
-        <td class="num">{{ s.total_comments }}</td>
-        <td class="num"><span class="badge {% if s.rubber_stamp_ratio >= 0.8 %}critical{% elif s.rubber_stamp_ratio >= 0.5 %}high{% else %}medium{% endif %}">{{ s.rubber_stamp_ratio | pct }}</span></td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <div class="empty">No rubber-stamp patterns detected.</div>
-  {% endif %}
-
-  <h3 style="margin-top:24px;font-size:15px;font-weight:600;color:#475569;">Files with lowest reviewer diversity</h3>
-  {% if ctx.low_diversity_files %}
-  <table>
-    <thead><tr>
-      <th>File</th>
-      <th class="num">Reviewers</th>
-      <th class="num">Reviews</th>
-      <th class="num">Diversity</th>
-    </tr></thead>
-    <tbody>
-    {% for s in ctx.low_diversity_files %}
-      <tr>
-        <td><code class="path">{{ s.file }}</code></td>
-        <td class="num">{{ s.unique_reviewers }}</td>
-        <td class="num">{{ s.total_reviews }}</td>
-        <td class="num"><span class="badge {% if s.diversity_hhi < 0.2 %}critical{% elif s.diversity_hhi < 0.5 %}high{% else %}medium{% endif %}">{{ s.diversity_hhi | pct }}</span></td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <div class="empty">No low-diversity files detected.</div>
-  {% endif %}
-</section>
-{% endif %}
-
-{% if ctx.correction_load_files %}
-<section>
-  <h2>Correction load</h2>
-  <p class="note">
-    Share of recent commits to each file that are follow-up fixes or reverts.
-    A high ratio is observable evidence of <em>stability debt</em> — work is
-    shipping but corrections are paying for it. Look at the surface, not the
-    person.
-  </p>
-  <table>
-    <thead><tr>
-      <th>File</th>
-      <th class="num">Total commits</th>
-      <th class="num">Fixes</th>
-      <th class="num">Reverts</th>
-      <th class="num">Correction ratio</th>
-      <th>Risk</th>
-    </tr></thead>
-    <tbody>
-    {% for f in ctx.correction_load_files[:10] %}
-      <tr>
-        <td>{{ f.file }}</td>
-        <td class="num">{{ f.total_commits }}</td>
-        <td class="num">{{ f.fix_commits }}</td>
-        <td class="num">{{ f.revert_commits }}</td>
-        <td class="num">{{ f.correction_ratio | pct }}</td>
-        <td><span class="badge {{ f.risk_level }}">{{ f.risk_level }}</span></td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</section>
-{% endif %}
-
 {% if ctx.module_graph and ctx.module_graph.edges %}
 <details class="architecture-details">
-  <summary>Architecture details — module dependency map</summary>
+  <summary>Module dependency map</summary>
   <section style="margin-top:16px;">
     <p class="note">
       Top-level directories rolled up from the file dependency graph. Each

@@ -1,14 +1,18 @@
-"""Minimal LLM provider clients using only the standard library.
+"""Minimal LLM provider clients over the standard library.
 
-No third-party deps — avoids dragging in `anthropic` or `litellm` just for one
-JSON POST. API keys are passed in explicitly (never read from env); see
-`blindspot.narrative.config` for the source-of-truth precedence.
+No provider SDKs — avoids dragging in `anthropic` or `litellm` just for one
+JSON POST. The only third-party touch is `certifi` (a CA bundle, optional at
+import time) so TLS verification works on macOS, where OpenSSL's default
+trust store is empty. API keys are passed in explicitly (never read from
+env); see `blindspot.narrative.config` for the source-of-truth precedence.
 """
 
 import json
+import ssl
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from functools import lru_cache
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
@@ -18,6 +22,24 @@ OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 
 TIMEOUT_SECONDS = 30
+
+
+@lru_cache(maxsize=1)
+def _ssl_context() -> ssl.SSLContext:
+    """TLS context for the API call.
+
+    Python's default context verifies against the OpenSSL trust store,
+    which on macOS (and some minimal Linux images) is often empty —
+    producing `CERTIFICATE_VERIFY_FAILED` even with a valid API key. If
+    `certifi` is installed we point at its CA bundle, which is the
+    portable fix; otherwise we fall back to the system default.
+    """
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
 
 
 class NarrativeError(RuntimeError):
@@ -59,7 +81,9 @@ class AnthropicClient:
             },
         )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(
+                req, timeout=self.timeout, context=_ssl_context()
+            ) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")[:300]
@@ -106,7 +130,9 @@ class OpenAIClient:
             },
         )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(
+                req, timeout=self.timeout, context=_ssl_context()
+            ) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")[:300]
