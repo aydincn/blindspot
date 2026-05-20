@@ -42,6 +42,17 @@ with a one-number answer a CTO/VP reads in one glance.**
   `.cursor` / `.vscode` / `.idea` group). Saha test caught uv's top
   recommendation being "Add AI-readable operational context for
   `.claude`" — ironic, since `.claude` *is* the AI tooling directory.
+- **Key-signal grade contradiction** — a healthy (green ✓) signal no
+  longer shows an "F" letter grade. Grades come from the composite
+  resilience sub-score, which measures a related-but-not-identical
+  thing; a green pill carrying an F was self-contradictory. Grades now
+  appear only on risk signals.
+- **AI-readiness key signal is repo-level** — was counting every
+  sub-module as a service that "lacks" AI context, producing alarmist
+  numbers ("17 services lack…"). Expecting a separate CLAUDE.md per
+  sub-module is unrealistic. The signal now reads the repo-root
+  coverage row: *"Repo lacks AI-readable operational context (1/5)"* —
+  one honest number a CTO can act on.
 
 ### Philosophy
 This is the last sprint of the simplification arc. The product does

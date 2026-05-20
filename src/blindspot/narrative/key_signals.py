@@ -22,7 +22,7 @@ no jargon — that's the whole point.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -174,47 +174,79 @@ def _correction(ctx: "ReportContext") -> KeySignal:
 
 
 def _ai_readiness(ctx: "ReportContext") -> KeySignal:
+    """Repo-level assessment, not per-service.
+
+    Counting every sub-module as a service that "lacks" AI context
+    produced alarmist numbers ("17 services lack…") — but expecting a
+    separate CLAUDE.md per sub-module is unrealistic. What actually
+    matters is the repo root: is there a CLAUDE.md, specs/, ADRs that a
+    new contributor (human or AI) loads first? So we read the
+    repo-level coverage row."""
     grade = ctx.resilience.ai_readiness_grade if ctx.resilience else None
-    if ctx.ai_readiness is None or not ctx.ai_readiness.services:
+    if ctx.ai_readiness is None:
         return KeySignal(
             name="AI readiness",
-            headline="No services to assess",
-            grade=grade,
-            meaning="Not enough service structure to measure AI-readable context.",
+            headline="Not assessed",
+            grade=None,
+            meaning="No file structure to measure AI-readable context.",
             healthy=True,
         )
-    gap = sum(
-        1 for c in ctx.ai_readiness.services if c.coverage_count < 2
-    )
-    if gap == 0:
+    repo_cov = ctx.ai_readiness.repo
+    n = repo_cov.coverage_count
+    if n >= 2:
         return KeySignal(
             name="AI readiness",
-            headline="Services carry AI-readable operational context",
+            headline=f"Repo carries AI-readable operational context ({n}/5)",
             grade=grade,
-            meaning="A new contributor or AI agent has docs to load before coding.",
+            meaning=(
+                "A new contributor or AI agent has docs to load at the "
+                "repo root before touching code."
+            ),
             healthy=True,
         )
+    missing = []
+    if not repo_cov.agent_rules:
+        missing.append("agent rules (CLAUDE.md)")
+    if not repo_cov.specs:
+        missing.append("specs")
+    if not repo_cov.architecture:
+        missing.append("architecture notes / ADRs")
+    if not repo_cov.prompts:
+        missing.append("prompts")
+    if not repo_cov.skills:
+        missing.append("skills")
     return KeySignal(
         name="AI readiness",
-        headline=f"{gap} services lack AI-readable operational context",
+        headline=f"Repo lacks AI-readable operational context ({n}/5)",
         grade=grade,
         meaning=(
-            "No CLAUDE.md / specs / ADRs — a new human or AI agent must "
-            "reverse-engineer these areas from code."
+            f"No {', '.join(missing[:3])} at the repo root — a new human "
+            "or AI agent must reverse-engineer the codebase."
         ),
         healthy=False,
     )
 
 
 def build_key_signals(ctx: "ReportContext") -> tuple[KeySignal, ...]:
-    """Build the six core pill metrics, in fixed display order."""
-    return (
+    """Build the six core pill metrics, in fixed display order.
+
+    A grade only ever appears on a *risk* signal. A green "healthy"
+    pill carrying an "F" is self-contradictory — the grade comes from
+    the composite resilience sub-score, which measures a related but
+    not identical thing. On a healthy signal we drop the grade entirely:
+    the ✓ and the headline already say everything.
+    """
+    signals = (
         _ownership(ctx),
         _departure(ctx),
         _decay(ctx),
         _review(ctx),
         _correction(ctx),
         _ai_readiness(ctx),
+    )
+    return tuple(
+        s if not s.healthy else replace(s, grade=None)
+        for s in signals
     )
 
 
